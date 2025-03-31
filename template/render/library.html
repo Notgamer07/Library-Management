@@ -8,10 +8,13 @@
             background-color: #f4f4f4;
             margin: 0;
             padding: 0;
+            background-image: url('https://cdn.pixabay.com/photo/2017/03/15/15/28/book-2149910_1280.jpg');
+            background-size: cover;
+            background-position: center;
         }
 
         header {
-            background-color: #333;
+            background-color: rgba(0, 0, 0, 0.7);
             color: #fff;
             padding: 20px;
             text-align: center;
@@ -21,6 +24,9 @@
             width: 80%;
             margin: auto;
             padding: 20px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 10px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
         }
 
         .menu {
@@ -42,6 +48,7 @@
 
         .menu button:hover {
             background-color: #777;
+            transform: scale(1.05);
         }
 
         .content {
@@ -65,10 +72,17 @@
             border: none;
             border-radius: 5px;
             cursor: pointer;
+            transition: transform 0.2s ease;
         }
 
         .submit-btn:hover {
             background-color: #777;
+            transform: scale(1.05);
+        }
+
+        .icon {
+            margin-right: 8px;
+            vertical-align: middle;
         }
     </style>
 </head>
@@ -76,13 +90,14 @@
 
 <header>
     <h1>Library Management System</h1>
+    <h3>Read, Learn, Innovate</h3>
 </header>
 
 <div class="container">
     <div class="menu">
-        <button onclick="showContent('student')">Student</button>
-        <button onclick="showContent('books')">Books</button>
-        <button onclick="showContent('locations')">Library Locations</button>
+        <button onclick="showContent('student')"><img class="icon" src="https://img.icons8.com/ios-filled/50/ffffff/student-male.png" alt="Student"> Student</button>
+        <button onclick="showContent('books')"><img class="icon" src="https://img.icons8.com/ios-filled/50/ffffff/book.png" alt="Books"> Books</button>
+        <button onclick="showContent('locations')"><img class="icon" src="https://img.icons8.com/ios-filled/50/ffffff/library.png" alt="Locations"> Library Locations</button>
     </div>
 
     <div class="content" id="contentArea">
@@ -112,11 +127,6 @@
 </div>
 
 <script>
-    function getCSRFToken() {
-        return document.cookie.split('; ')
-            .find(row => row.startsWith('csrftoken='))?.split('=')[1] || '';
-    }
-
     function showContent(option) {
         const content = document.getElementById('contentArea');
         if (option === 'student') {
