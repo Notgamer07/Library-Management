@@ -7,7 +7,7 @@ def add_student(request):
         roll_no = request.POST.get('roll_no')
         book_title = request.POST.get('book_title')
         if not name or not roll_no or not book_title:  
-            return render(request, "library.html", {"error": "All fields are required!"})
+            return render(request, "render/library.html", {"error": "All fields are required!"})
         # Save the borrowed book record in the database
         BorrowRecord.objects.create(
             name=name,
