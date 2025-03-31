@@ -23,4 +23,5 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('library.urls')),
     path('favicon.ico', lambda request: HttpResponseNotFound()),
+    path('', include('DueBooks.urls')),
 ]

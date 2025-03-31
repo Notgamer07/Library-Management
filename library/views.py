@@ -36,4 +36,6 @@ def add_book(request):
         author = request.POST['author']
         price = request.POST['price']
         Book.objects.create(title=title, author=author, price=price)
+        if not title or not author or not price:  
+            return render(request, "render/book_list.html", {"error": "All fields are required!"})
     return redirect('book_list')
