@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Library Management System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+
+        header {
+            background-color: #333;
+            color: #fff;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .container {
+            width: 80%;
+            margin: auto;
+            padding: 20px;
+        }
+
+        .menu {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+        }
+
+        .menu button {
+            background-color: #555;
+            color: #fff;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: background-color 0.3s;
+        }
+
+        .menu button:hover {
+            background-color: #777;
+        }
+
+        .content {
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        input[type="text"], input[type="number"] {
+            width: 60%;
+            padding: 10px;
+            margin: 8px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .submit-btn {
+            background-color: #555;
+            color: white;
+            padding: 10px 20px;
+            margin-top: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .submit-btn:hover {
+            background-color: #777;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Library Management System</h1>
+</header>
+
+<div class="container">
+    <div class="menu">
+        <button onclick="showContent('student')">Student</button>
+        <button onclick="showContent('books')">Books</button>
+        <button onclick="showContent('locations')">Library Locations</button>
+    </div>
+
+    <div class="content" id="contentArea">
+        <h2>Welcome to the Library Management System</h2>
+        <p>Select an option from the menu above to get started.</p>
+    </div>
+</div>
+
+<script>
+    function getCSRFToken() {
+        return document.cookie.split('; ')
+            .find(row => row.startsWith('csrftoken='))
+            ?.split('=')[1] || '';
+    }
+    function showContent(option) {
+        const content = document.getElementById('contentArea');
+        if (option === 'student') {
+            content.innerHTML = `
+                <h2>Student Section</h2>
+                <form action="/add_student/" method="POST">
+                    {% csrf_token %}
+                    <label>Enter Student Name:</label><br>
+                    <input type="text" name="name" placeholder="Student Name"><br><br>
+                    <label>Enter Roll No (alphanumeric):</label><br>
+                    <input type="text" name="roll_no" placeholder="Roll No"><br><br>
+                    <label>Borrowed Book Title:</label><br>
+                    <input type="text" name="book_title" placeholder="Enter book title"><br><br>
+                    <input type="hidden" name="borrow_date" id="borrowDate">
+                    <button class="submit-btn" type="submit">Submit</button>
+                </form>
+                <script>document.getElementById('borrowDate').value = new Date().toISOString();<\/script>
+            `;
+        } else if (option === 'books') {
+            window.location.href = "/books/";
+        } else if (option === 'locations') {
+            content.innerHTML = '<h2>Library Locations</h2><p>Find library locations and branches here.</p>';
+        }
+    }
+</script>
+
+</body>
+</html>
