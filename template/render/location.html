@@ -71,16 +71,14 @@
         </tr>
         {% for book in due_books %}
         <tr>
-            <td>{{ book.title }}</td>
-            <td>{{ book.author }}</td>
+            <td>{{ book.book_title }}</td>
             <td>{{ book.borrower_name }}</td>
             <td>{{ book.student_id }}</td>
-            <td>{{ book.due_date }}</td>
-            <td>{{ book.days_overdue }}</td>
-        </tr>
+            <td>{{ book.borrowed_date }}</td>
+            <td>{{ book.days_overdue }}</td></tr>
         {% empty %}
         <tr>
-            <td colspan="6" style="text-align: center;">No due books found.</td>
+            <td colspan="4" style="text-align: center;">No due books found.</td>
         </tr>
         {% endfor %}
     </table>

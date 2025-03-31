@@ -1,11 +1,13 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from .models import Book, BorrowRecord
+from django.db import connection
 
 def add_student(request):
     if request.method == "POST":
         name = request.POST.get('name')
         roll_no = request.POST.get('roll_no')
         book_title = request.POST.get('book_title')
+        print("Executed SQL Query:", connection.queries)
         if not name or not roll_no or not book_title:  
             return render(request, "render/library.html", {"error": "All fields are required!"})
         # Save the borrowed book record in the database
@@ -19,6 +21,7 @@ def add_student(request):
     return render(request, 'render/library.html')
 
 def home(request):
+    print("Executed SQL Query1:", connection.queries)
     return render(request, 'render/library.html')
 
 def book_list(request):
