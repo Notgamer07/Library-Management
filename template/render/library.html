@@ -88,15 +88,35 @@
     <div class="content" id="contentArea">
         <h2>Welcome to the Library Management System</h2>
         <p>Select an option from the menu above to get started.</p>
+
+        {% if error %}
+            <p style="color: red; font-weight: bold;">{{ error }}</p>
+        {% endif %}
+
+        <div id="studentForm" style="display:none;">
+            <h2>Student Section</h2>
+            <form action="/add_student/" method="POST">
+                {% csrf_token %}
+                <label>Enter Student Name:</label><br>
+                <input type="text" name="name" placeholder="Student Name"><br><br>
+                <label>Enter Roll No (alphanumeric):</label><br>
+                <input type="text" name="roll_no" placeholder="Roll No"><br><br>
+                <label>Borrowed Book Title:</label><br>
+                <input type="text" name="book_title" placeholder="Enter book title"><br><br>
+                <input type="hidden" name="borrow_date" id="borrowDate">
+                <button class="submit-btn" type="submit">Submit</button>
+            </form>
+            <script>document.getElementById('borrowDate').value = new Date().toISOString();</script>
+        </div>
     </div>
 </div>
 
 <script>
     function getCSRFToken() {
         return document.cookie.split('; ')
-            .find(row => row.startsWith('csrftoken='))
-            ?.split('=')[1] || '';
+            .find(row => row.startsWith('csrftoken='))?.split('=')[1] || '';
     }
+
     function showContent(option) {
         const content = document.getElementById('contentArea');
         if (option === 'student') {
@@ -113,7 +133,7 @@
                     <input type="hidden" name="borrow_date" id="borrowDate">
                     <button class="submit-btn" type="submit">Submit</button>
                 </form>
-                <script>document.getElementById('borrowDate').value = new Date().toISOString();<\/script>
+                <script>document.getElementById('borrowDate').value = new Date().toISOString();<\script>
             `;
         } else if (option === 'books') {
             window.location.href = "/books/";
