@@ -1,6 +1,9 @@
 from django.shortcuts import render
 from library.models import BorrowRecord
 from datetime import timedelta, datetime
+from django.utils.timezone import now
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 
 def show(request):
     # Get all borrow records
@@ -16,6 +19,7 @@ def show(request):
         overdue_days = (today - due_date).days if today > due_date else None
 
         borrowed_books.append({
+            'id': record.id,
             'book_title': record.book_title,
             'borrower_name': record.name,
             'student_id': record.roll_no,
@@ -26,3 +30,20 @@ def show(request):
         })
 
     return render(request, 'render/location.html', {'due_books': borrowed_books})
+
+
+@csrf_exempt
+def mark_as_returned(request):
+    if request.method == "POST":
+        record_id = request.POST.get("record_id")
+        try:
+            record = BorrowRecord.objects.get(id=record_id)
+            record.returned_date = now()
+            record.save()
+            return JsonResponse({
+                'status': 'success',
+                'returned_date': record.returned_date.strftime('%Y-%m-%d %H:%M:%S')
+            })
+        except BorrowRecord.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Record not found'})
+    return JsonResponse({'status': 'error', 'message': 'Invalid request'})

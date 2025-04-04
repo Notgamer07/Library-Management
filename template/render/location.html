@@ -49,6 +49,33 @@
         tr:hover {
             background-color: #f1f1f1;
         }
+        .return-cell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px; /* spacing between text and button */
+    height: 40px; /* prevent jumpy rows */
+}
+
+.return-button {
+    padding: 4px 10px;
+    font-size: 12px;
+    background-color: #28a745;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+
+.return-cell:hover .return-button {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+
     </style>
 </head>
 <body>
@@ -71,22 +98,58 @@
             <th>Days Overdue</th>
         </tr>
         {% for book in due_books %}
-        <tr>
+        <tr data-record-id="{{ book.id }}">
             <td>{{ book.book_title }}</td>
             <td>{{ book.borrower_name }}</td>
             <td>{{ book.student_id }}</td>
             <td>{{ book.borrowed_date }}</td>
             <td>{{ book.due_date }}</td>
-            <td>{{ book.returned_date }}</td>
+            <td class="return-cell">
+                <span>{{ book.returned_date }}</span>
+                {% if book.returned_date == 'Not Returned' %}
+                    <button class="return-button" data-record-id="{{ book.id }}">Return</button>
+                {% endif %}
+            </td>
             <td>{{ book.days_overdue }}</td>
         </tr>
-        {% empty %}
-        <tr>
-            <td colspan="4" style="text-align: center;">No due books found.</td>
-        </tr>
-        {% endfor %}
+            {% endfor %}
     </table>
 </div>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    // Show return button on hover
+    $(document).ready(function () {
+        $(".return-cell").hover(
+            function () {
+                $(this).find(".return-btn").show();
+            },
+            function () {
+                $(this).find(".return-btn").hide();
+            }
+        );
+
+        $(".return-btn").click(function () {
+            const row = $(this).closest("tr");
+            const recordId = row.data("record-id");
+            const button = $(this);
+
+            $.ajax({
+                url: "/return-book/",
+                type: "POST",
+                data: {
+                    record_id: recordId,
+                    csrfmiddlewaretoken: "{{ csrf_token }}"
+                },
+                success: function (data) {
+                    if (data.status === "success") {
+                        button.hide();
+                        row.find(".returned-date").text(data.returned_date);
+                    }
+                }
+            });
+        });
+    });
+</script>
 
 </body>
 </html>
