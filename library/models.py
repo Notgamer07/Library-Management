@@ -14,6 +14,7 @@ class BorrowRecord(models.Model):
     roll_no = models.CharField(max_length=255, unique=True)
     book_title = models.CharField(max_length=255)
     borrowed_book = models.DateTimeField(auto_now_add=True)
+    returned_date = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f'{self.name} - {self.book_title}'
