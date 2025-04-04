@@ -21,7 +21,6 @@ def add_student(request):
     return render(request, 'render/library.html')
 
 def home(request):
-    print("Executed SQL Query1:", connection.queries)
     return render(request, 'render/library.html')
 
 def book_list(request):

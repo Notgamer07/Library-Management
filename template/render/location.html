@@ -75,7 +75,9 @@
             <td>{{ book.borrower_name }}</td>
             <td>{{ book.student_id }}</td>
             <td>{{ book.borrowed_date }}</td>
-            <td>{{ book.days_overdue }}</td></tr>
+            <td>{{ book.due_date }}</td>
+            <td>{{ book.days_overdue }}</td>
+        </tr>
         {% empty %}
         <tr>
             <td colspan="4" style="text-align: center;">No due books found.</td>
