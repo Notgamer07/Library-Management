@@ -1,6 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Due Books - Library Management System</title>
     <style>
         body {
@@ -49,33 +51,80 @@
         tr:hover {
             background-color: #f1f1f1;
         }
+
         .return-cell {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 10px; /* spacing between text and button */
-    height: 40px; /* prevent jumpy rows */
-}
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            height: 40px;
+        }
 
-.return-button {
-    padding: 4px 10px;
-    font-size: 12px;
-    background-color: #28a745;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s;
-}
+        .return-button {
+            padding: 4px 10px;
+            font-size: 12px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
 
-.return-cell:hover .return-button {
-    opacity: 1;
-    pointer-events: auto;
-}
+        .return-cell:hover .return-button {
+            opacity: 1;
+            pointer-events: auto;
+        }
 
+        /* ✅ Responsive Tables for small screens */
+        @media (max-width: 600px) {
+            table, thead, tbody, th, td, tr {
+                display: block;
+            }
 
+            thead {
+                display: none;
+            }
+
+            tr {
+                margin-bottom: 15px;
+                border: 1px solid #ccc;
+                border-radius: 8px;
+                padding: 10px;
+                background-color: rgba(255, 255, 255, 0.9);
+            }
+
+            td {
+                position: relative;
+                padding-left: 50%;
+                text-align: left;
+                border: none;
+                border-bottom: 1px solid #ddd;
+            }
+
+            td::before {
+                position: absolute;
+                top: 12px;
+                left: 12px;
+                width: 45%;
+                padding-right: 10px;
+                white-space: nowrap;
+                font-weight: bold;
+                content: attr(data-label);
+            }
+
+            .return-button {
+                font-size: 10px;
+                padding: 4px 8px;
+            }
+
+            .return-cell {
+                flex-wrap: wrap;
+                gap: 4px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -88,6 +137,7 @@
 <div class="container">
     <h2>List of Due Books</h2>
     <table>
+        <thead>
         <tr>
             <th>Book Title</th>
             <th>Borrower Name</th>
@@ -97,43 +147,37 @@
             <th>Returned Date</th>
             <th>Days Overdue</th>
         </tr>
+        </thead>
+        <tbody>
         {% for book in due_books %}
         <tr data-record-id="{{ book.id }}">
-            <td>{{ book.book_title }}</td>
-            <td>{{ book.borrower_name }}</td>
-            <td>{{ book.student_id }}</td>
-            <td>{{ book.borrowed_date }}</td>
-            <td>{{ book.due_date }}</td>
-            <td class="return-cell">
-                <span>{{ book.returned_date }}</span>
+            <td data-label="Book Title">{{ book.book_title }}</td>
+            <td data-label="Borrower Name">{{ book.borrower_name }}</td>
+            <td data-label="Student ID">{{ book.student_id }}</td>
+            <td data-label="Borrowed Date">{{ book.borrowed_date }}</td>
+            <td data-label="Due Date">{{ book.due_date }}</td>
+            <td data-label="Returned Date" class="return-cell">
+                <span class="returned-date">{{ book.returned_date }}</span>
                 {% if book.returned_date == 'Not Returned' %}
                     <button class="return-button" data-record-id="{{ book.id }}">Return</button>
                 {% endif %}
             </td>
-            <td>{{ book.days_overdue }}</td>
+            <td data-label="Days Overdue">{{ book.days_overdue }}</td>
         </tr>
-            {% endfor %}
+        {% endfor %}
+        </tbody>
     </table>
 </div>
+
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
-    // Show return button on hover
     $(document).ready(function () {
-        $(".return-cell").hover(
-            function () {
-                $(this).find(".return-btn").show();
-            },
-            function () {
-                $(this).find(".return-btn").hide();
-            }
-        );
-
         $(".return-button").click(function () {
             const row = $(this).closest("tr");
             const recordId = row.data("record-id");
             const button = $(this);
-            
-            console.log("Record ID:", recordId); 
+
+            console.log("Record ID:", recordId);
             $.ajax({
                 url: "/return-book/",
                 type: "POST",
@@ -144,7 +188,7 @@
                 success: function (data) {
                     if (data.status === "success") {
                         button.hide();
-                        row.find(".return-cell span").text(data.returned_date);
+                        row.find(".returned-date").text(data.returned_date);
                     }
                 }
             });
