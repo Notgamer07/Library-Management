@@ -32,18 +32,19 @@ A Django-based web application to manage library books, borrowers, and due dates
 
 ## 📁 Project Structure
 
+```
 Library-Management/
 │
 ├── DueBooks/              # App to manage borrow records
 ├── library/               # App to manage books and students
 ├── library_management/    # Main project config
 ├── templates/render/      # HTML templates
+                   |── books.html
+                   |── library.html
+                   |── location.html
 ├── requirements.txt
 └── README.mdpackages
-
-yaml
-Copy
-Edit
+```
 
 ---
 
@@ -112,26 +113,20 @@ http://127.0.0.1:8000/
 
 🔁 AJAX Book Return Feature
 
-Go to /location/
-
-Hover over Not Returned rows to show the Return button
-
-Click the button → AJAX marks the book as returned
+Go to `/location/`  
+Hover over **Not Returned** rows to show the Return button  
+Click the button → AJAX marks the book as returned  
 
 
 📦 requirements.txt
 
-Django==5.1.7
-
+`Django==5.1.7 
 mysqlclient==2.2.7
-
 asgiref==3.8.1
-
 pytz==2025.1
-
 sqlparse==0.5.3
+tzdata==2025.1`
 
-tzdata==2025.1
 
 
 👤 Author
