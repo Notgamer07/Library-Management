@@ -117,11 +117,17 @@ Click the button → AJAX marks the book as returned
 
 
 📦 requirements.txt
+
 Django==5.1.7
+
 mysqlclient==2.2.7
+
 asgiref==3.8.1
+
 pytz==2025.1
+
 sqlparse==0.5.3
+
 tzdata==2025.1
 
 
