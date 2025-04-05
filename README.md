@@ -111,8 +111,11 @@ http://127.0.0.1:8000/
 
 
 🔁 AJAX Book Return Feature
+
 Go to /location/
+
 Hover over Not Returned rows to show the Return button
+
 Click the button → AJAX marks the book as returned
 
 
