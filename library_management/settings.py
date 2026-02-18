@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
-
+import json
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -20,7 +20,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-zs%g$5h_i(utdieb06abnq!mj)7ev@64^1c%b1$wbi(d_83v2z'
+with open("env.json","r") as file: # create the env that has ur secret_key, MySQL password, databse and more
+    protected_data = json.load(file) 
+
+SECRET_KEY = protected_data["secret_key"]
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -78,9 +81,9 @@ WSGI_APPLICATION = 'library_management.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'library_db',
-        'USER': 'root',
-        'PASSWORD': '12345678',
+        'NAME': protected_data["name"],
+        'USER': protected_data["user"],
+        'PASSWORD': protected_data["password"],
         'HOST': 'localhost',
         'PORT': '3306',
     }
