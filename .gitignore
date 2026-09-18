@@ -16,7 +16,8 @@ db.sqlite3
 # Environment variables
 .env
 env.json
-
+test_config_setup.md
+testConnection.py
 # Virtual environment
 /venv/
 

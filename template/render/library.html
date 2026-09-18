@@ -1,157 +1,253 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Library Management System</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            margin: 0;
-            padding: 0;
-            background-image: url('https://cdn.pixabay.com/photo/2017/03/15/15/28/book-2149910_1280.jpg');
-            background-size: cover;
-            background-position: center;
-        }
+{% extends 'render/base.html' %}
 
-        header {
-            background-color: rgba(0, 0, 0, 0.7);
-            color: #fff;
-            padding: 20px;
-            text-align: center;
-        }
+{% block title %}Loan Desk - JTG LMS{% endblock %}
 
-        .container {
-            width: 80%;
-            margin: auto;
-            padding: 20px;
-            background-color: rgba(255, 255, 255, 0.8);
-            border-radius: 10px;
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
-        }
+{% block content %}
+<div class="space-y-8">
 
-        .menu {
-            display: flex;
-            justify-content: space-around;
-            margin: 20px 0;
-        }
-
-        .menu button {
-            background-color: #555;
-            color: #fff;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 18px;
-            transition: background-color 0.3s;
-        }
-
-        .menu button:hover {
-            background-color: #777;
-            transform: scale(1.05);
-        }
-
-        .content {
-            text-align: center;
-            margin-top: 30px;
-        }
-
-        input[type="text"], input[type="number"] {
-            width: 60%;
-            padding: 10px;
-            margin: 8px 0;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-
-        .submit-btn {
-            background-color: #555;
-            color: white;
-            padding: 10px 20px;
-            margin-top: 10px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: transform 0.2s ease;
-        }
-
-        .submit-btn:hover {
-            background-color: #777;
-            transform: scale(1.05);
-        }
-
-        .icon {
-            margin-right: 8px;
-            vertical-align: middle;
-        }
-    </style>
-</head>
-<body>
-
-<header>
-    <h1>Library Management System</h1>
-    <h3>Read, Learn, Innovate</h3>
-</header>
-
-<div class="container">
-    <div class="menu">
-        <button onclick="showContent('student')"><img class="icon" src="https://img.icons8.com/ios-filled/50/ffffff/student-male.png" alt="Student"> Student</button>
-        <button onclick="showContent('books')"><img class="icon" src="https://img.icons8.com/ios-filled/50/ffffff/book.png" alt="Books"> Books</button>
-        <button onclick="showContent('locations')"><img class="icon" src="https://img.icons8.com/ios-filled/50/ffffff/library.png" alt="Locations"> Due Books</button>
+    <!-- Hero & Welcome Banner -->
+    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 sm:p-8 shadow-xl">
+        <div class="absolute -right-10 -bottom-10 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="relative z-10 max-w-3xl">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 mb-3">
+                <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+                <span>ACID Atomic Stored Procedures & Row Locking</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Circulation Desk & Student Checkout</h1>
+            <p class="mt-2 text-slate-300 text-sm sm:text-base leading-relaxed">
+                Issue library books to students with guaranteed inventory consistency, sub-millisecond B-tree indexing, and automatic 7-day loan window scheduling.
+            </p>
+        </div>
     </div>
 
-    <div class="content" id="contentArea">
-        <h2>Welcome to the Library Management System</h2>
-        <p>Select an option from the menu above to get started.</p>
+    <!-- Quick Stats Metric Cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        
+        <!-- Total Books -->
+        <div class="bg-white rounded-xl border border-slate-200/80 p-5 shadow-xs hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Titles</span>
+                <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <i data-lucide="book-copy" class="w-4 h-4"></i>
+                </div>
+            </div>
+            <div class="mt-3">
+                <span class="text-2xl sm:text-3xl font-bold text-slate-900">{{ metrics.silver_books|default:"0" }}</span>
+                <span class="text-xs text-slate-400 ml-1">in 3NF catalog</span>
+            </div>
+        </div>
 
-        {% if error %}
-            <p style="color: red; font-weight: bold;">{{ error }}</p>
-        {% endif %}
+        <!-- Active Borrowers -->
+        <div class="bg-white rounded-xl border border-slate-200/80 p-5 shadow-xs hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Registered Students</span>
+                <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                    <i data-lucide="users" class="w-4 h-4"></i>
+                </div>
+            </div>
+            <div class="mt-3">
+                <span class="text-2xl sm:text-3xl font-bold text-slate-900">{{ metrics.silver_borrowers|default:"0" }}</span>
+                <span class="text-xs text-slate-400 ml-1">active borrowers</span>
+            </div>
+        </div>
 
-        <div id="studentForm" style="display:none;">
-            <h2>Student Section</h2>
-            <form action="/add_student/" method="POST">
+        <!-- Active Loans -->
+        <div class="bg-white rounded-xl border border-slate-200/80 p-5 shadow-xs hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Loans</span>
+                <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <i data-lucide="bookmark" class="w-4 h-4"></i>
+                </div>
+            </div>
+            <div class="mt-3">
+                <span class="text-2xl sm:text-3xl font-bold text-slate-900">{{ metrics.silver_active_loans|default:"0" }}</span>
+                <span class="text-xs text-slate-400 ml-1">books checked out</span>
+            </div>
+        </div>
+
+        <!-- Overdue Loans -->
+        <div class="bg-white rounded-xl border border-slate-200/80 p-5 shadow-xs hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Overdue Loans</span>
+                <div class="w-8 h-8 rounded-lg {% if metrics.silver_overdue_loans > 0 %}bg-rose-50 text-rose-600{% else %}bg-slate-50 text-slate-400{% endif %} flex items-center justify-center">
+                    <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                </div>
+            </div>
+            <div class="mt-3 flex items-baseline gap-2">
+                <span class="text-2xl sm:text-3xl font-bold {% if metrics.silver_overdue_loans > 0 %}text-rose-600{% else %}text-slate-900{% endif %}">
+                    {{ metrics.silver_overdue_loans|default:"0" }}
+                </span>
+                {% if metrics.silver_overdue_loans > 0 %}
+                <span class="text-xs font-medium text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100">Fines Pending</span>
+                {% else %}
+                <span class="text-xs text-slate-400">All loans on schedule</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Alert (if any) -->
+    {% if error %}
+    <div class="rounded-xl bg-rose-50 border border-rose-200 p-4 flex items-start gap-3 text-rose-800 animate-fade-in">
+        <i data-lucide="alert-octagon" class="w-5 h-5 text-rose-600 shrink-0 mt-0.5"></i>
+        <div>
+            <h4 class="font-semibold text-sm">Issue Transaction Failed</h4>
+            <p class="text-sm mt-0.5 text-rose-700">{{ error }}</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Main Circulation Content Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+
+        <!-- Issue Book Form Card -->
+        <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="border-b border-slate-100 px-6 py-5 flex items-center justify-between bg-slate-50/50">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                        <i data-lucide="user-plus" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base font-bold text-slate-900">Issue Book to Student</h2>
+                        <p class="text-xs text-slate-500">Atomic checkout invoking stored procedure `sp_issue_book`</p>
+                    </div>
+                </div>
+                <span class="px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 rounded-full border border-emerald-200">
+                    Row-Lock Protected
+                </span>
+            </div>
+
+            <form action="{% url 'add_student' %}" method="POST" class="p-6 space-y-5">
                 {% csrf_token %}
-                <label>Enter Student Name:</label><br>
-                <input type="text" name="name" placeholder="Student Name"><br><br>
-                <label>Enter Roll No (alphanumeric):</label><br>
-                <input type="text" name="roll_no" placeholder="Roll No"><br><br>
-                <label>Borrowed Book Title:</label><br>
-                <input type="text" name="book_title" placeholder="Enter book title"><br><br>
-                <input type="hidden" name="borrow_date" id="borrowDate">
-                <button class="submit-btn" type="submit">Submit</button>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <!-- Student Name -->
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                            Borrower Full Name <span class="text-rose-500">*</span>
+                        </label>
+                        <div class="relative">
+                            <i data-lucide="user" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3"></i>
+                            <input type="text" name="name" required placeholder="e.g. Alice Smith"
+                                   class="w-full pl-10 pr-4 py-2.5 bg-slate-50/50 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all">
+                        </div>
+                    </div>
+
+                    <!-- Student ID / Roll Number -->
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                            Student ID / Roll No <span class="text-rose-500">*</span>
+                        </label>
+                        <div class="relative">
+                            <i data-lucide="badge-check" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3"></i>
+                            <input type="text" name="roll_no" required placeholder="e.g. STU-1001"
+                                   class="w-full pl-10 pr-4 py-2.5 bg-slate-50/50 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Book Selection with Autocomplete Datalist -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Book Title <span class="text-rose-500">*</span>
+                    </label>
+                    <div class="relative">
+                        <i data-lucide="book" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3"></i>
+                        <input type="text" name="book_title" list="bookTitlesList" required placeholder="Type or select an available title..."
+                               class="w-full pl-10 pr-4 py-2.5 bg-slate-50/50 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all">
+                        <datalist id="bookTitlesList">
+                            {% for b in available_books %}
+                            <option value="{{ b.title }}">{{ b.title }} ({{ b.available_copies }} copies left)</option>
+                            {% endfor %}
+                        </datalist>
+                    </div>
+                    <p class="mt-1.5 text-xs text-slate-400 flex items-center gap-1">
+                        <i data-lucide="info" class="w-3.5 h-3.5"></i>
+                        Select from catalog or enter exact book title. Row locks automatically decrement copy count.
+                    </p>
+                </div>
+
+                <!-- Loan Terms Pill -->
+                <div class="rounded-xl bg-slate-50 border border-slate-200/80 p-3.5 flex items-center justify-between text-xs text-slate-600">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="calendar" class="w-4 h-4 text-brand-600"></i>
+                        <span>Loan Duration: <strong>7 Days</strong> from issuance</span>
+                    </div>
+                    <span class="text-slate-400">Overdue fine: $2.00 / day</span>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="pt-2">
+                    <button type="submit"
+                            class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 shadow-md shadow-brand-500/20 active:scale-[0.99] transition-all">
+                        <i data-lucide="check" class="w-4 h-4"></i>
+                        <span>Confirm & Issue Book</span>
+                    </button>
+                </div>
             </form>
-            <script>document.getElementById('borrowDate').value = new Date().toISOString();</script>
+        </div>
+
+        <!-- Quick Navigation / Info Sidebar Card -->
+        <div class="space-y-6">
+            <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+                <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <i data-lucide="compass" class="w-4 h-4 text-brand-600"></i>
+                    <span>Quick Management</span>
+                </h3>
+
+                <div class="space-y-3">
+                    <a href="{% url 'book_list' %}" class="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-brand-50 hover:border-brand-200 group transition-all">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center group-hover:bg-brand-600 group-hover:text-white transition-colors">
+                                <i data-lucide="book-marked" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-800 group-hover:text-brand-700">Browse Catalog</h4>
+                                <p class="text-[11px] text-slate-400">Search, filter & paginate books</p>
+                            </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-hover:text-brand-600 group-hover:translate-x-0.5 transition-all"></i>
+                    </a>
+
+                    <a href="{% url 'dueBook' %}" class="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-brand-50 hover:border-brand-200 group transition-all">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center group-hover:bg-brand-600 group-hover:text-white transition-colors">
+                                <i data-lucide="clock" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-800 group-hover:text-brand-700">Due Books & Returns</h4>
+                                <p class="text-[11px] text-slate-400">Process returns & view fines</p>
+                            </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-hover:text-brand-600 group-hover:translate-x-0.5 transition-all"></i>
+                    </a>
+
+                    <a href="{% url 'admin_dashboard' %}" class="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-amber-50 hover:border-amber-200 group transition-all">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition-colors">
+                                <i data-lucide="cpu" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-800 group-hover:text-amber-800">ETL Pipeline Monitor</h4>
+                                <p class="text-[11px] text-slate-400">Control Medallion transformations</p>
+                            </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all"></i>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Architecture Badge -->
+            <div class="bg-gradient-to-br from-indigo-50/80 to-slate-50 rounded-2xl border border-indigo-100 p-5">
+                <div class="flex items-center gap-2 text-indigo-900 text-xs font-bold uppercase tracking-wider mb-2">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-indigo-600"></i>
+                    <span>Medallion Architecture</span>
+                </div>
+                <p class="text-xs text-slate-600 leading-relaxed">
+                    Staged pipeline processing: Landing ingestion buffers high-volume writes before batch validation into Bronze, entity normalization in Silver 3NF, and analytical aggregation in Gold.
+                </p>
+            </div>
         </div>
     </div>
 </div>
-
-<script>
-    function showContent(option) {
-        const content = document.getElementById('contentArea');
-        if (option === 'student') {
-            content.innerHTML = `
-                <h2>Student Section</h2>
-                <form action="/add_student/" method="POST">
-                    {% csrf_token %}
-                    <label>Enter Student Name:</label><br>
-                    <input type="text" name="name" placeholder="Student Name"><br><br>
-                    <label>Enter Roll No (alphanumeric):</label><br>
-                    <input type="text" name="roll_no" placeholder="Roll No"><br><br>
-                    <label>Borrowed Book Title:</label><br>
-                    <input type="text" name="book_title" placeholder="Enter book title"><br><br>
-                    <input type="hidden" name="borrow_date" id="borrowDate">
-                    <button class="submit-btn" type="submit">Submit</button>
-                </form>
-                <script>document.getElementById('borrowDate').value = new Date().toISOString();<\script>
-            `;
-        } else if (option === 'books') {
-            window.location.href = "/books/";
-        } else if (option === 'locations') {
-            window.location.href = "/location/";
-        }
-    }
-</script>
-
-</body>
-</html>
+{% endblock %}
