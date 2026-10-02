@@ -1,0 +1,173 @@
+﻿erDiagram
+    %% Entity Relationship Diagram for Medallion Data Architecture
+
+    %% ========================================================================
+    %% 1. LANDING LAYER (Staging Instance - Port 5433)
+    %% ========================================================================
+    landing_books_ingest {
+        uuid ingest_id PK "UUID default uuid_generate_v4()"
+        jsonb raw_payload "Untransformed raw book payload"
+        varchar source_channel "Ingest source: API, DJANGO_UI, etc."
+        timestamptz received_at "Current timestamp"
+        boolean processed_flag "FALSE=Pending, TRUE=Processed"
+    }
+
+    landing_borrow_ingest {
+        uuid ingest_id PK "UUID default uuid_generate_v4()"
+        jsonb raw_payload "Untransformed raw borrow payload"
+        varchar source_channel "Ingest source: API, MOBILE, etc."
+        timestamptz received_at "Current timestamp"
+        boolean processed_flag "FALSE=Pending, TRUE=Processed"
+    }
+
+    %% ========================================================================
+    %% 2. BRONZE LAYER (Data Lake Instance - Port 5434)
+    %% ========================================================================
+    bronze_books {
+        uuid bronze_id PK "UUID default uuid_generate_v4()"
+        uuid ingest_id FK "Originating landing ingest_id"
+        varchar title "Book title"
+        varchar author_name "Author name"
+        varchar category_name "Category name default General"
+        varchar publisher_name "Publisher name"
+        varchar isbn "ISBN code"
+        numeric price "Book price default 0.00"
+        int total_copies "Total copies default 1"
+        boolean is_valid "Hygiene validation passed"
+        boolean promoted_to_silver "Promoted to Silver 3NF"
+        timestamptz bronze_ingested_at "Bronze staging timestamp"
+    }
+
+    bronze_borrow_records {
+        uuid bronze_id PK "UUID default uuid_generate_v4()"
+        uuid ingest_id FK "Originating landing ingest_id"
+        varchar borrower_name "Student / Borrower name"
+        varchar student_id "Unique roll / student id"
+        varchar book_title "Title of borrowed book"
+        timestamptz borrow_date "Loan issue timestamp"
+        timestamptz due_date "Calculated loan due date"
+        boolean is_valid "Hygiene validation passed"
+        boolean promoted_to_silver "Executed into Silver 3NF"
+        timestamptz bronze_ingested_at "Bronze staging timestamp"
+    }
+
+    bronze_ingestion_errors {
+        uuid error_id PK "UUID default uuid_generate_v4()"
+        varchar source_layer "LANDING or LANDING_BORROW"
+        jsonb raw_data "Corrupted or invalid JSON payload"
+        text error_message "Validation exception message"
+        timestamptz logged_at "Error logging timestamp"
+    }
+
+    %% ========================================================================
+    %% 3. SILVER LAYER (3NF Normalized OLTP - Port 5432)
+    %% ========================================================================
+    categories {
+        int category_id PK "SERIAL"
+        varchar name UK "Unique category name"
+        text description "Optional description"
+        timestamptz created_at "Creation timestamp"
+    }
+
+    authors {
+        int author_id PK "SERIAL"
+        varchar name UK "Unique author name"
+        varchar email "Author email"
+        timestamptz created_at "Creation timestamp"
+    }
+
+    publishers {
+        int publisher_id PK "SERIAL"
+        varchar name UK "Unique publisher name"
+        text address "Publisher address"
+        timestamptz created_at "Creation timestamp"
+    }
+
+    books {
+        int book_id PK "SERIAL"
+        varchar isbn UK "Unique ISBN-10 or ISBN-13"
+        varchar title "Book title"
+        int author_id FK "References authors(author_id)"
+        int category_id FK "References categories(category_id)"
+        int publisher_id FK "References publishers(publisher_id)"
+        numeric price "Price >= 0"
+        int total_copies "Total copies owned >= 0"
+        int available_copies "Available for loan <= total_copies"
+        timestamptz created_at "Creation timestamp"
+        timestamptz updated_at "Auto-updated via trigger"
+    }
+
+    borrowers {
+        int borrower_id PK "SERIAL"
+        varchar student_id UK "Unique Student Roll Number"
+        varchar name "Borrower full name"
+        varchar email "Borrower email"
+        varchar status "ACTIVE, SUSPENDED, GRADUATED"
+        timestamptz created_at "Creation timestamp"
+        timestamptz updated_at "Auto-updated via trigger"
+    }
+
+    borrow_records {
+        int record_id PK "SERIAL"
+        int borrower_id FK "References borrowers(borrower_id)"
+        int book_id FK "References books(book_id)"
+        timestamptz borrowed_at "Issue timestamp"
+        timestamptz due_date "Return due date"
+        timestamptz returned_at "Actual returned timestamp"
+        varchar status "BORROWED, RETURNED, OVERDUE, LOST"
+        numeric fine_amount "Accrued overdue fine"
+        timestamptz updated_at "Auto-updated via trigger"
+    }
+
+    fine_payments {
+        int payment_id PK "SERIAL"
+        int record_id FK "References borrow_records(record_id)"
+        numeric amount "Payment amount > 0"
+        timestamptz paid_at "Payment receipt timestamp"
+        varchar payment_method "CASH, CARD, ONLINE"
+    }
+
+    %% ========================================================================
+    %% 4. GOLD LAYER (Materialized Daily KPIs - Port 5432)
+    %% ========================================================================
+    gold_daily_kpi_summary {
+        date summary_date PK "Calendar date of KPI snapshot"
+        int total_books_in_catalog "Total distinct titles"
+        int total_copies_available "Sum of available copies"
+        int total_active_loans "Count of active loans"
+        int total_overdue_loans "Count of overdue loans"
+        numeric total_fines_accrued "Sum of accrued fines"
+        numeric total_fines_collected "Sum of fine payments"
+        timestamptz last_updated_at "Last refresh timestamp"
+    }
+
+    %% ========================================================================
+    %% 5. PIPELINE AUDIT (Execution History - Port 5432)
+    %% ========================================================================
+    library_pipelinerunhistory {
+        int id PK "SERIAL"
+        varchar mode "landing_to_bronze, bronze_to_silver, ALL, DAEMON"
+        timestamptz started_at "Run start timestamp"
+        timestamptz ended_at "Run finish timestamp"
+        varchar status "STARTING, RUNNING, COMPLETED, CANCELLED, FAILED"
+        int rows_landing_to_bronze "Count rows staged to Bronze"
+        int rows_bronze_to_silver "Count rows promoted to Silver"
+        boolean gold_refreshed "Gold layer refreshed flag"
+        text error_message "Failure exception details"
+    }
+
+    %% ========================================================================
+    %% RELATIONSHIPS
+    %% ========================================================================
+    authors ||--o{ books : "writes"
+    categories ||--o{ books : "classifies"
+    publishers ||--o{ books : "publishes"
+
+    borrowers ||--o{ borrow_records : "borrows"
+    books ||--o{ borrow_records : "loaned_in"
+    borrow_records ||--o{ fine_payments : "incurs"
+
+    landing_books_ingest ||--o| bronze_books : "stages_into"
+    landing_borrow_ingest ||--o| bronze_borrow_records : "stages_into"
+    bronze_books }o--|| books : "promotes_to"
+    bronze_borrow_records }o--|| borrow_records : "promotes_to"

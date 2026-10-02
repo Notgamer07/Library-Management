@@ -1,0 +1,348 @@
+{% extends 'render/base.html' %}
+
+{% block title %}Due Books & Returns - JTG LMS{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <!-- Top Header Bar -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs">
+        <div>
+            <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Due Books & Returns Processing</h1>
+            <p class="text-xs sm:text-sm text-slate-500 mt-1">
+                Active borrow records &bull; Instant return processing via stored procedure `sp_return_book`
+            </p>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold">
+                <i data-lucide="calculator" class="w-3.5 h-3.5 text-amber-600"></i>
+                <span>Overdue rate: $2.00 / day</span>
+            </span>
+        </div>
+    </div>
+
+    <!-- Quick Status KPI Cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Active Loans -->
+        <a href="?status=active{% if search_query %}&q={{ search_query }}{% endif %}&page_size={{ page_size }}" 
+           class="p-4 rounded-2xl border transition-all duration-200 {% if status_filter == 'active' %}bg-blue-50/80 border-blue-300 ring-2 ring-blue-500/20 shadow-xs{% else %}bg-white border-slate-200 hover:border-blue-200 hover:bg-blue-50/30{% endif %}">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-blue-700">Active Loans</span>
+                <span class="p-2 rounded-xl bg-blue-100 text-blue-700"><i data-lucide="clock" class="w-4 h-4"></i></span>
+            </div>
+            <div class="mt-2 text-2xl font-extrabold text-slate-900">{{ total_active }}</div>
+            <p class="text-[11px] text-slate-500 mt-0.5">Currently on loan</p>
+        </a>
+
+        <!-- Overdue Loans -->
+        <a href="?status=overdue{% if search_query %}&q={{ search_query }}{% endif %}&page_size={{ page_size }}" 
+           class="p-4 rounded-2xl border transition-all duration-200 {% if status_filter == 'overdue' %}bg-rose-50/80 border-rose-300 ring-2 ring-rose-500/20 shadow-xs{% else %}bg-white border-slate-200 hover:border-rose-200 hover:bg-rose-50/30{% endif %}">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-rose-700">Overdue</span>
+                <span class="p-2 rounded-xl bg-rose-100 text-rose-700"><i data-lucide="alert-triangle" class="w-4 h-4"></i></span>
+            </div>
+            <div class="mt-2 text-2xl font-extrabold text-rose-600">{{ total_overdue }}</div>
+            <p class="text-[11px] text-slate-500 mt-0.5">Pending fine accrual</p>
+        </a>
+
+        <!-- Returned Books -->
+        <a href="?status=returned{% if search_query %}&q={{ search_query }}{% endif %}&page_size={{ page_size }}" 
+           class="p-4 rounded-2xl border transition-all duration-200 {% if status_filter == 'returned' %}bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-500/20 shadow-xs{% else %}bg-white border-slate-200 hover:border-emerald-200 hover:bg-emerald-50/30{% endif %}">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-emerald-700">Returned</span>
+                <span class="p-2 rounded-xl bg-emerald-100 text-emerald-700"><i data-lucide="check-circle-2" class="w-4 h-4"></i></span>
+            </div>
+            <div class="mt-2 text-2xl font-extrabold text-slate-900">{{ total_returned }}</div>
+            <p class="text-[11px] text-slate-500 mt-0.5">Completed returns</p>
+        </a>
+
+        <!-- Total Filtered -->
+        <a href="?status=all{% if search_query %}&q={{ search_query }}{% endif %}&page_size={{ page_size }}" 
+           class="p-4 rounded-2xl border transition-all duration-200 {% if status_filter == 'all' %}bg-indigo-50/80 border-indigo-300 ring-2 ring-indigo-500/20 shadow-xs{% else %}bg-white border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/30{% endif %}">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-indigo-700">All Records</span>
+                <span class="p-2 rounded-xl bg-indigo-100 text-indigo-700"><i data-lucide="files" class="w-4 h-4"></i></span>
+            </div>
+            <div class="mt-2 text-2xl font-extrabold text-slate-900">{{ total_records }}</div>
+            <p class="text-[11px] text-slate-500 mt-0.5">Matching current filters</p>
+        </a>
+    </div>
+
+    <!-- Quick Search & Filter Toolbar -->
+    <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+        <form method="GET" action="{% url 'dueBook' %}" class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+            <!-- Search Input -->
+            <div class="relative flex-1">
+                <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3"></i>
+                <input type="text" name="q" value="{{ search_query }}" 
+                       placeholder="Search by student ID, borrower name, or book title..."
+                       class="w-full pl-10 pr-4 py-2 bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition-all">
+            </div>
+
+            <!-- Status Filter -->
+            <input type="hidden" name="status" value="{{ status_filter }}">
+
+            <!-- Controls Group -->
+            <div class="flex items-center gap-2 shrink-0">
+                <!-- Page Size Selector -->
+                <div class="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                    <span>Rows:</span>
+                    <select name="page_size" onchange="this.form.submit()" class="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer">
+                        <option value="10" {% if page_size == 10 %}selected{% endif %}>10</option>
+                        <option value="15" {% if page_size == 15 %}selected{% endif %}>15</option>
+                        <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
+                        <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+                        <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+                    </select>
+                </div>
+
+                <!-- Submit Filter Button -->
+                <button type="submit" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5">
+                    <i data-lucide="filter" class="w-3.5 h-3.5"></i>
+                    <span>Apply</span>
+                </button>
+
+                <!-- Clear Filter Link -->
+                {% if search_query or status_filter != 'all' %}
+                <a href="{% url 'dueBook' %}?page_size={{ page_size }}" class="p-2 rounded-xl border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors" title="Reset Filters">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </a>
+                {% endif %}
+            </div>
+        </form>
+
+        <!-- Status Filter Pills -->
+        <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
+            <span class="text-slate-400 font-medium">Filter Status:</span>
+            <a href="?status=all{% if search_query %}&q={{ search_query }}{% endif %}&page_size={{ page_size }}" 
+               class="px-2.5 py-1 rounded-lg font-semibold transition-colors {% if status_filter == 'all' %}bg-slate-900 text-white shadow-xs{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}">
+                All
+            </a>
+            <a href="?status=active{% if search_query %}&q={{ search_query }}{% endif %}&page_size={{ page_size }}" 
+               class="px-2.5 py-1 rounded-lg font-semibold transition-colors {% if status_filter == 'active' %}bg-blue-600 text-white shadow-xs{% else %}bg-blue-50 text-blue-700 hover:bg-blue-100{% endif %}">
+                Active Loans
+            </a>
+            <a href="?status=overdue{% if search_query %}&q={{ search_query }}{% endif %}&page_size={{ page_size }}" 
+               class="px-2.5 py-1 rounded-lg font-semibold transition-colors {% if status_filter == 'overdue' %}bg-rose-600 text-white shadow-xs{% else %}bg-rose-50 text-rose-700 hover:bg-rose-100{% endif %}">
+                Overdue
+            </a>
+            <a href="?status=returned{% if search_query %}&q={{ search_query }}{% endif %}&page_size={{ page_size }}" 
+               class="px-2.5 py-1 rounded-lg font-semibold transition-colors {% if status_filter == 'returned' %}bg-emerald-600 text-white shadow-xs{% else %}bg-emerald-50 text-emerald-700 hover:bg-emerald-100{% endif %}">
+                Returned
+            </a>
+        </div>
+    </div>
+
+    <!-- Due Books Table Card -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs sm:text-sm text-slate-700">
+                <thead class="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    <tr>
+                        <th class="px-5 py-3.5">Record ID</th>
+                        <th class="px-5 py-3.5">Book Title</th>
+                        <th class="px-5 py-3.5">Borrower</th>
+                        <th class="px-5 py-3.5">Student ID</th>
+                        <th class="px-5 py-3.5">Borrowed Date</th>
+                        <th class="px-5 py-3.5">Due Date</th>
+                        <th class="px-5 py-3.5">Status & Fine</th>
+                        <th class="px-5 py-3.5 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="dueBooksTableBody" class="divide-y divide-slate-100 font-medium">
+                    {% for book in due_books %}
+                    <tr data-record-id="{{ book.id }}" class="hover:bg-slate-50/70 transition-colors group">
+                        <!-- Record ID -->
+                        <td class="px-5 py-4 font-mono text-xs text-slate-400">
+                            #{{ book.id }}
+                        </td>
+
+                        <!-- Book Title -->
+                        <td class="px-5 py-4 font-semibold text-slate-900 max-w-[220px]">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="book" class="w-4 h-4 text-slate-400 shrink-0"></i>
+                                <span class="truncate" title="{{ book.book_title }}">{{ book.book_title }}</span>
+                            </div>
+                        </td>
+
+                        <!-- Borrower Name -->
+                        <td class="px-5 py-4 text-slate-800">
+                            {{ book.borrower_name }}
+                        </td>
+
+                        <!-- Student ID -->
+                        <td class="px-5 py-4">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                {{ book.student_id }}
+                            </span>
+                        </td>
+
+                        <!-- Borrowed Date -->
+                        <td class="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">
+                            {{ book.borrowed_date }}
+                        </td>
+
+                        <!-- Due Date -->
+                        <td class="px-5 py-4 text-slate-700 text-xs whitespace-nowrap">
+                            {{ book.due_date }}
+                        </td>
+
+                        <!-- Status & Fine Badge -->
+                        <td class="px-5 py-4 whitespace-nowrap status-cell">
+                            {% if book.returned_date != 'Not Returned' %}
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                    <i data-lucide="check" class="w-3.5 h-3.5 text-slate-500"></i>
+                                    <span>Returned ({{ book.returned_date }})</span>
+                                </span>
+                            {% elif book.days_overdue and book.days_overdue != 'N/A' %}
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                                    <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-rose-600"></i>
+                                    <span>{{ book.days_overdue }}d Overdue</span>
+                                </span>
+                            {% else %}
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                    <i data-lucide="clock" class="w-3.5 h-3.5 text-blue-600"></i>
+                                    <span>Active Loan</span>
+                                </span>
+                            {% endif %}
+                        </td>
+
+                        <!-- Action Button -->
+                        <td class="px-5 py-4 text-right whitespace-nowrap action-cell">
+                            {% if book.returned_date == 'Not Returned' %}
+                            <button type="button" data-record-id="{{ book.id }}"
+                                    class="return-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-all hover:scale-105 active:scale-95">
+                                <i data-lucide="corner-down-left" class="w-3.5 h-3.5"></i>
+                                <span>Return</span>
+                            </button>
+                            {% else %}
+                            <span class="text-xs text-slate-400 italic">Completed</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="px-5 py-12 text-center text-slate-400">
+                            <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 text-slate-300"></i>
+                            <p class="font-medium text-slate-600">No borrow records found matching the criteria.</p>
+                            <p class="text-xs text-slate-400 mt-1">Try resetting the search or filter options.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        {% if page_obj.has_other_pages %}
+        <div class="bg-slate-50/80 px-4 sm:px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <!-- Showing entries text -->
+            <div class="text-xs text-slate-500">
+                Showing <strong class="text-slate-800">{{ page_obj.start_index }}</strong> to <strong class="text-slate-800">{{ page_obj.end_index }}</strong> of <strong class="text-slate-800">{{ total_records }}</strong> records
+            </div>
+
+            <!-- Page Buttons -->
+            <div class="flex items-center gap-1">
+                <!-- First Page -->
+                {% if page_obj.has_previous %}
+                <a href="?page=1&page_size={{ page_size }}&status={{ status_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" 
+                   class="p-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition-colors" title="First Page">
+                    <i data-lucide="chevrons-left" class="w-4 h-4"></i>
+                </a>
+                <a href="?page={{ page_obj.previous_page_number }}&page_size={{ page_size }}&status={{ status_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" 
+                   class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-100 flex items-center gap-1 transition-colors">
+                    <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+                    <span>Prev</span>
+                </a>
+                {% endif %}
+
+                <!-- Current Page Pill -->
+                <span class="px-3.5 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-bold shadow-xs">
+                    Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                </span>
+
+                <!-- Next Page -->
+                {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}&page_size={{ page_size }}&status={{ status_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" 
+                   class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-100 flex items-center gap-1 transition-colors">
+                    <span>Next</span>
+                    <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+                </a>
+                <a href="?page={{ page_obj.paginator.num_pages }}&page_size={{ page_size }}&status={{ status_filter }}{% if search_query %}&q={{ search_query }}{% endif %}" 
+                   class="p-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition-colors" title="Last Page">
+                    <i data-lucide="chevrons-right" class="w-4 h-4"></i>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% elif total_records > 0 %}
+        <div class="bg-slate-50/80 px-4 sm:px-6 py-3 border-t border-slate-200 text-xs text-slate-500">
+            Showing all <strong class="text-slate-800">{{ total_records }}</strong> records on a single page.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Handle AJAX Book Return
+    $(document).ready(function () {
+        $(document).on("click", ".return-btn", function () {
+            const button = $(this);
+            const row = button.closest("tr");
+            const recordId = button.data("record-id");
+
+            button.prop("disabled", true).html('<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> Processing...');
+            lucide.createIcons();
+
+            $.ajax({
+                url: "{% url 'return-book' %}",
+                type: "POST",
+                data: {
+                    record_id: recordId,
+                    csrfmiddlewaretoken: "{{ csrf_token }}"
+                },
+                success: function (data) {
+                    if (data.status === "success") {
+                        if (typeof showToast === 'function') {
+                            showToast(`Book returned successfully! Overdue fine: $${data.fine_amount.toFixed(2)}`, 'success');
+                        } else {
+                            alert(`Book returned successfully! Overdue fine: $${data.fine_amount.toFixed(2)}`);
+                        }
+                        
+                        row.find('.status-cell').html(`
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                <i data-lucide="check" class="w-3.5 h-3.5 text-slate-500"></i>
+                                <span>Returned (${data.returned_date})</span>
+                            </span>
+                        `);
+                        row.find('.action-cell').html('<span class="text-xs text-slate-400 italic">Completed</span>');
+                        lucide.createIcons();
+                    } else {
+                        button.prop("disabled", false).html('<i data-lucide="corner-down-left" class="w-3.5 h-3.5"></i> Return');
+                        const msg = data.message || 'Failed to process return.';
+                        if (typeof showToast === 'function') {
+                            showToast(msg, 'error');
+                        } else {
+                            alert(msg);
+                        }
+                        lucide.createIcons();
+                    }
+                },
+                error: function () {
+                    button.prop("disabled", false).html('<i data-lucide="corner-down-left" class="w-3.5 h-3.5"></i> Return');
+                    const msg = 'Server error while processing book return.';
+                    if (typeof showToast === 'function') {
+                        showToast(msg, 'error');
+                    } else {
+                        alert(msg);
+                    }
+                    lucide.createIcons();
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

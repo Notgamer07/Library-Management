@@ -1,0 +1,94 @@
+flowchart TD
+    %% Deployment Architecture: Docker Compose Containers, Networks, and Volumes
+
+    subgraph Host ["Host Machine (Windows / Linux / macOS)"]
+        subgraph Ports ["Published Host Ports"]
+            P8080["Port 8080 (Web UI)"]
+            P8000["Port 8000 (FastAPI Docs & REST)"]
+            P6379["Port 6379 (Redis)"]
+            P5433["Port 5433 (Landing DB)"]
+            P5434["Port 5434 (Bronze DB)"]
+            P5432["Port 5432 (Silver DB)"]
+        end
+
+        subgraph DockerCompose ["Docker Compose Orchestration Environment"]
+            subgraph WebTier ["Web & Application Services"]
+                DjangoCont["library_django_web<br/>(Dockerfile.django - Python 3.11-slim)<br/>• Port: 8080<br/>• Cmd: python manage.py runserver<br/>• Django Web UI & Admin Dashboard"]
+                APICont["library_api_backend<br/>(Dockerfile.api - Python 3.11-slim)<br/>• Port: 8000<br/>• Cmd: uvicorn backend.main:app<br/>• FastAPI Async Endpoints"]
+            end
+
+            subgraph WorkerTier ["Background Processing Services"]
+                WorkerCont["library_pipeline_worker<br/>(Dockerfile.api - Python 3.11-slim)<br/>• No host ports exposed<br/>• Cmd: python pipeline/etl_medallion.py<br/>• Medallion ETL Pipeline Daemon"]
+            end
+
+            subgraph CacheTier ["In-Memory Caching Services"]
+                RedisCont["library_redis_cache<br/>(redis:7-alpine)<br/>• Port: 6379<br/>• Healthcheck: redis-cli ping"]
+            end
+
+            subgraph DatabaseTier ["PostgreSQL 16 Multi-Instance Database Services"]
+                LandingCont["library_db_landing<br/>(postgres:16-alpine)<br/>• Container Port: 5432 (Host: 5433)<br/>• DB: landing_db<br/>• Init: schema_landing.sql<br/>• Healthcheck: pg_isready"]
+                BronzeCont["library_db_bronze<br/>(postgres:16-alpine)<br/>• Container Port: 5432 (Host: 5434)<br/>• DB: bronze_db<br/>• Init: schema_bronze.sql<br/>• Healthcheck: pg_isready"]
+                SilverCont["library_db_silver<br/>(postgres:16-alpine)<br/>• Container Port: 5432 (Host: 5432)<br/>• DB: silver_db<br/>• Init: schema_silver.sql, init_users.sql<br/>• Healthcheck: pg_isready"]
+            end
+
+            subgraph Volumes ["Docker Named & Bind Volumes"]
+                VolLanding[("landing_postgres_data<br/>(Persistent Volume)")]
+                VolBronze[("bronze_postgres_data<br/>(Persistent Volume)")]
+                VolSilver[("silver_postgres_data<br/>(Persistent Volume)")]
+                VolRedis[("redis_data<br/>(Persistent Volume)")]
+                BindApp["Host Directory Bind Mount<br/>.:/app (Live Hot-Reloading)"]
+            end
+        end
+    end
+
+    %% Port Forwarding Links
+    P8080 --> DjangoCont
+    P8000 --> APICont
+    P6379 --> RedisCont
+    P5433 --> LandingCont
+    P5434 --> BronzeCont
+    P5432 --> SilverCont
+
+    %% Container Dependencies & Communication
+    DjangoCont -->|"Port 5432 (default DB)"| SilverCont
+    DjangoCont -->|"Port 5432 (landing DB)"| LandingCont
+    DjangoCont -->|"Port 5432 (bronze DB)"| BronzeCont
+    DjangoCont -.->|"Health Check Dependency"| SilverCont
+    DjangoCont -.->|"Health Check Dependency"| LandingCont
+
+    APICont -->|"Port 5432 (Writes)"| LandingCont
+    APICont -->|"Port 5432 (Reads)"| SilverCont
+    APICont -->|"Port 6379 (Cache)"| RedisCont
+    APICont -.->|"Health Check Dependency"| LandingCont
+    APICont -.->|"Health Check Dependency"| SilverCont
+    APICont -.->|"Health Check Dependency"| RedisCont
+
+    WorkerCont -->|"Port 5432 (Stage 1 Read)"| LandingCont
+    WorkerCont -->|"Port 5432 (Stage 1 Write / Stage 2 Read)"| BronzeCont
+    WorkerCont -->|"Port 5432 (Stage 2 & 3 Upsert/Refresh)"| SilverCont
+    WorkerCont -.->|"Health Check Dependency"| LandingCont
+    WorkerCont -.->|"Health Check Dependency"| BronzeCont
+    WorkerCont -.->|"Health Check Dependency"| SilverCont
+
+    %% Volume Mappings
+    LandingCont --- VolLanding
+    BronzeCont --- VolBronze
+    SilverCont --- VolSilver
+    RedisCont --- VolRedis
+    BindApp -.- DjangoCont
+    BindApp -.- APICont
+    BindApp -.- WorkerCont
+
+    classDef port fill:#f1f5f9,stroke:#64748b,stroke-width:1px;
+    classDef web fill:#dbeafe,stroke:#2563eb,stroke-width:2px;
+    classDef worker fill:#f3e8ff,stroke:#9333ea,stroke-width:2px;
+    classDef cache fill:#fee2e2,stroke:#dc2626,stroke-width:2px;
+    classDef db fill:#fef3c7,stroke:#d97706,stroke-width:2px;
+    classDef vol fill:#ecfdf5,stroke:#059669,stroke-width:2px;
+
+    class P8080,P8000,P6379,P5433,P5434,P5432 port;
+    class DjangoCont,APICont web;
+    class WorkerCont worker;
+    class RedisCont cache;
+    class LandingCont,BronzeCont,SilverCont db;
+    class VolLanding,VolBronze,VolSilver,VolRedis,BindApp vol;

@@ -1,0 +1,100 @@
+flowchart TD
+    %% Admin & Data Management Flow: Monitoring, Subprocess Supervision, and Metrics Aggregation
+
+    subgraph AdminClient ["Admin / Operator (No Auth / Open Access)"]
+        Browser["Web Browser<br/>(:8080/admin-dashboard/)"]
+        DjangoBuiltinAdmin["Django Admin Console<br/>(:8080/admin/)"]
+    end
+
+    subgraph DjangoWeb ["Django Web Tier (:8080)"]
+        subgraph AdminViews ["Admin Views & API Controllers"]
+            V_Dash["library.views.admin_dashboard<br/>(Initial Page Render)"]
+            V_Status["library.views.api_pipeline_status<br/>(AJAX Polling Every 2s)"]
+            V_Start["library.views.api_pipeline_start<br/>(POST Trigger Stage)"]
+            V_Stop["library.views.api_pipeline_stop<br/>(POST SIGTERM)"]
+            V_History["library.views.api_pipeline_history<br/>(GET Recent 50 Runs)"]
+            V_Monitor["library.views.api_resource_monitor<br/>(AJAX Polling Every 3s)"]
+        end
+
+        subgraph MetricsCollector ["Data Metrics Aggregator"]
+            Collector["get_medallion_metrics()<br/>• Queries Landing DB row counts<br/>• Queries Bronze DB row counts<br/>• Queries Silver 3NF entity counts<br/>• Queries latest Gold KPI row"]
+        end
+
+        subgraph Supervision ["Pipeline Supervision System"]
+            Mgr["PipelineManager Singleton (threading.RLock)<br/>• Subprocess Lifecycle: STARTING / RUNNING / COMPLETED / FAILED / CANCELLED<br/>• Rolling Log Buffer (collections.deque maxlen 500)<br/>• Subprocess Supervisor Thread<br/>• Regex Stats Parser: STATS:stage:count"]
+            PSUtil["psutil Resource Monitor<br/>• CPU % and Core count<br/>• Memory Total, Used, Available<br/>• Disk Total, Used, Free<br/>• Database connection status"]
+        end
+    end
+
+    subgraph ExecutionSubprocess ["OS Subprocess Layer"]
+        ETLProc["Subprocess: python pipeline/etl_medallion.py<br/>• Flag: --stage landing_to_bronze | bronze_to_silver | silver_to_gold<br/>• Merged stdout/stderr piped into Supervisor Thread<br/>• Emits STATS tags and logs"]
+    end
+
+    subgraph StorageLayer ["Multi-Instance Databases"]
+        LandingDB[("Landing DB (:5433)<br/>landing_books_ingest<br/>landing_borrow_ingest")]
+        BronzeDB[("Bronze DB (:5434)<br/>bronze_books<br/>bronze_borrow_records<br/>bronze_ingestion_errors")]
+        SilverDB[("Silver & Gold DB (:5432)<br/>• 3NF Tables & Stored Procedures<br/>• gold_daily_kpi_summary<br/>• library_pipelinerunhistory (Audit Log)")]
+    end
+
+    %% Initial Dashboard Load
+    Browser -->|"GET /admin-dashboard/"| V_Dash
+    V_Dash --> Collector
+    Collector -->|"SELECT COUNT(*) landing tables"| LandingDB
+    Collector -->|"SELECT COUNT(*) bronze tables"| BronzeDB
+    Collector -->|"SELECT COUNT(*) 3NF & Gold"| SilverDB
+    V_Dash -->|"Fetch in-memory runner state"| Mgr
+    V_Dash -->|"render(admin_dashboard.html)"| Browser
+
+    %% Start Pipeline Stage Trigger
+    Browser -->|"POST /api/pipeline/start/ {pipeline_type}"| V_Start
+    V_Start -->|"start_pipeline(stage)"| Mgr
+    Mgr -->|"1. Create run record (status=RUNNING)"| SilverDB
+    Mgr -->|"2. Spawn subprocess (python -u etl_medallion.py)"| ETLProc
+    Mgr -->|"3. Start supervisor daemon thread"| Mgr
+    V_Start -->|"202 Accepted {pipeline_status}"| Browser
+
+    %% Subprocess Execution & Log Draining
+    ETLProc -->|"Piped stdout (Logs & STATS lines)"| Mgr
+    ETLProc <-->|"Stage 1, 2, or 3 transformations"| StorageLayer
+    Mgr -->|"Parse STATS lines into PipelineRunStats"| Mgr
+    Mgr -->|"Append timestamped logs to deque"| Mgr
+    ETLProc -->|"Process exits (Code 0 or non-zero)"| Mgr
+    Mgr -->|"Finalize run: update status, ended_at, stats"| SilverDB
+
+    %% Stop Pipeline Trigger
+    Browser -->|"POST /api/pipeline/stop/"| V_Stop
+    V_Stop -->|"stop()"| Mgr
+    Mgr -->|"proc.terminate() -> SIGTERM"| ETLProc
+    Mgr -->|"Update status=CANCELLED in DB"| SilverDB
+    V_Stop -->|"JSON {success, status=CANCELLED}"| Browser
+
+    %% AJAX Telemetry Polling
+    Browser -->|"GET /api/pipeline/status/ (Every 2s)"| V_Status
+    V_Status -->|"Read live status, logs, stats"| Mgr
+    V_Status -->|"Fresh tier counts"| Collector
+    V_Status -->|"JSON {pipeline, metrics}"| Browser
+
+    %% Pipeline History Polling
+    Browser -->|"GET /api/pipeline/history/"| V_History
+    V_History -->|"SELECT last 50 runs"| SilverDB
+    V_History -->|"JSON {runs: [...]}"| Browser
+
+    %% Resource Monitor Polling
+    Browser -->|"GET /api/resource-monitor/ (Every 3s)"| V_Monitor
+    V_Monitor -->|"Query OS stats"| PSUtil
+    V_Monitor -->|"JSON {cpu, memory, disk, db_pool}"| Browser
+
+    %% Built-in Admin
+    DjangoBuiltinAdmin -->|"CRUD on library.models.Book"| SilverDB
+
+    classDef client fill:#e0f2fe,stroke:#0284c7,stroke-width:2px;
+    classDef view fill:#f0fdf4,stroke:#16a34a,stroke-width:2px;
+    classDef logic fill:#fef3c7,stroke:#d97706,stroke-width:2px;
+    classDef proc fill:#fce7f3,stroke:#db2777,stroke-width:2px;
+    classDef db fill:#ede9fe,stroke:#7c3aed,stroke-width:2px;
+
+    class Browser,DjangoBuiltinAdmin client;
+    class V_Dash,V_Status,V_Start,V_Stop,V_History,V_Monitor view;
+    class Collector,Mgr,PSUtil logic;
+    class ETLProc proc;
+    class LandingDB,BronzeDB,SilverDB db;

@@ -2,10 +2,14 @@
 
 A comprehensive technical reference for the Decoupled High-Throughput Library Management System REST API and internal administrative endpoints.
 
-The JTG Library Management System utilizes a **high-throughput, decoupled architecture** built on the **Medallion Data Pattern** (Landing &rarr; Bronze &rarr; Silver &rarr; Gold):
+The JTG Library Management System utilizes a **high-throughput, decoupled CQRS architecture** built on the **Medallion Data Pattern** (Landing &rarr; Bronze &rarr; Silver &rarr; Gold):
 
-- **FastAPI Async Engine** (http://localhost:8000): High-speed, non-blocking asynchronous REST API designed for high-concurrency workloads (~1000 req/sec), featuring  syncpg connection pooling and Redis sub-millisecond in-memory caching.
+- **FastAPI Async Engine** (http://localhost:8000): High-speed, non-blocking asynchronous REST API designed for high-concurrency workloads (~1000 req/sec), featuring asyncpg connection pooling and Redis sub-millisecond in-memory caching. Routes all **write requests** to the Landing Site Database and all **read requests** to the Silver Database.
 - **Django Web UI & Admin Controller** (http://localhost:8080): Full-featured administrative control center, operational UI, and pipeline orchestrator.
+- **Decoupled Multi-Database Architecture**:
+  - `Landing Database` (Port 5433): Write ingestion staging for books and loans.
+  - `Bronze Database` (Port 5434): Cleansed and validated data lake + audit error logs.
+  - `Silver Database` (Port 5432): Normalized 3NF OLTP, catalog reads, and Gold analytics.
 
 Interactive Swagger/OpenAPI documentation is available at http://localhost:8000/docs (or Redoc at http://localhost:8000/redoc).
 
@@ -15,8 +19,8 @@ Interactive Swagger/OpenAPI documentation is available at http://localhost:8000/
 
 | Service | Port | Base URL | Content-Type |
 | :--- | :--- | :--- | :--- |
-| **FastAPI Backend** | 8000 | http://localhost:8000/api/v1 | pplication/json |
-| **Django Web App** | 8080 | http://localhost:8080 | pplication/x-www-form-urlencoded / pplication/json |
+| **FastAPI Backend** | 8000 | http://localhost:8000/api/v1 | application/json |
+| **Django Web App** | 8080 | http://localhost:8080 | application/x-www-form-urlencoded / application/json |
 
 ---
 
@@ -25,7 +29,7 @@ Interactive Swagger/OpenAPI documentation is available at http://localhost:8000/
 ### 1.1 Health Check
 
 #### GET /health
-Verifies backend service health, database connection pool status, and Redis cache responsiveness.
+Verifies backend service health, Landing database status (writes), Silver database status (reads), and Redis cache responsiveness.
 
 - **URL**: http://localhost:8000/health
 - **Method**: GET
@@ -33,21 +37,23 @@ Verifies backend service health, database connection pool status, and Redis cach
 - **Parameters**: None
 
 ##### Example Request:
-` ash
+```bash
 curl -X GET http://localhost:8000/health
-`
+```
 
 ##### Example Response (200 OK):
-`json
+```json
 {
   "status": "ok",
   "backend": "ok",
   "database": "ok",
+  "landing_database": "ok",
+  "silver_database": "ok",
   "web": "ok",
   "cache-server": "ok",
-  "timestamp": "2026-09-18T11:45:00.123Z"
+  "timestamp": "2026-09-22T21:00:00.123Z"
 }
-`
+```
 
 ---
 

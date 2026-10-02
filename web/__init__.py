@@ -1,0 +1,3 @@
+"""
+Django Web Application Package.
+"""

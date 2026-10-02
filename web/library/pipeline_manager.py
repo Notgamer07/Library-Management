@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "library_management.settings")
 
 STAGE_DISPLAY_NAMES = {
-    "landing_to_bronze": "Landing to Bronze",
     "bronze_to_silver": "Bronze to Silver",
     "silver_to_gold": "Silver to Gold",
+    "landing_to_bronze": "Bronze to Silver",  # compatibility fallback
     "ALL": "Full Medallion Cycle",
     "DAEMON": "Scheduled Daemon",
     "RUN_ONCE": "Single Cycle",
@@ -26,6 +26,30 @@ class PipelineRunStats:
         self.rows_landing_to_bronze: int = 0
         self.rows_bronze_to_silver: int = 0
         self.gold_refreshed: bool = False
+
+
+def _get_pipeline_script_path() -> str:
+    """
+    Dynamically resolves the absolute path to etl_medallion.py across possible directories
+    (pipeline/ or pipelines/), whether running from project root or inside web/ directory.
+    Guarantees no FileNotFoundError is raised.
+    """
+    curr = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        # When pipeline_manager is in web/library/: project root is 2 levels up from library
+        os.path.join(os.path.dirname(os.path.dirname(curr)), "pipeline", "etl_medallion.py"),
+        os.path.join(os.path.dirname(os.path.dirname(curr)), "pipelines", "etl_medallion.py"),
+        # When pipeline_manager is in library/ at project root
+        os.path.join(os.path.dirname(curr), "pipeline", "etl_medallion.py"),
+        os.path.join(os.path.dirname(curr), "pipelines", "etl_medallion.py"),
+        # Current working directory fallbacks
+        os.path.join(os.getcwd(), "pipeline", "etl_medallion.py"),
+        os.path.join(os.getcwd(), "pipelines", "etl_medallion.py"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return candidates[0]
 
 
 class PipelineManager:
@@ -45,7 +69,7 @@ class PipelineManager:
         self.ended_at: datetime | None = None
         self.last_error: str | None = None
         self.logs: collections.deque = collections.deque(maxlen=500)
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
         # Non-blocking log queue - producer: _reader_thread, consumer: _drainer_thread
         self._log_queue: queue.Queue = queue.Queue(maxsize=5000)
@@ -75,10 +99,9 @@ class PipelineManager:
         m = self._STATS_RE.match(line.strip())
         if m:
             key, value = m.group(1), int(m.group(2))
-            if key == "landing_to_bronze":
-                self._current_stats.rows_landing_to_bronze = value
-            elif key == "bronze_to_silver":
+            if key in ("bronze_to_silver", "landing_to_bronze"):
                 self._current_stats.rows_bronze_to_silver = value
+                self._current_stats.rows_landing_to_bronze = value
             elif key == "gold_refreshed":
                 self._current_stats.gold_refreshed = bool(value)
             return True
@@ -254,11 +277,7 @@ class PipelineManager:
             self.last_error = None
             self._current_stats = PipelineRunStats()
 
-            script_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "pipelines",
-                "etl_medallion.py",
-            )
+            script_path = _get_pipeline_script_path()
             cmd = [sys.executable, "-u", script_path, "--stage", pipeline_type]
 
             display_name = STAGE_DISPLAY_NAMES.get(pipeline_type, pipeline_type)
@@ -297,11 +316,7 @@ class PipelineManager:
             if self.is_running and self.process and self.process.poll() is None:
                 return False, "Pipeline is already running."
 
-            script_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "pipelines",
-                "etl_medallion.py",
-            )
+            script_path = _get_pipeline_script_path()
             cmd = [sys.executable, "-u", script_path, "--interval-seconds", str(interval_seconds)]
 
             try:

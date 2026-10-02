@@ -27,7 +27,6 @@ class PipelineRunHistory(models.Model):
     Written by pipeline_manager.py when a run finishes (normally or via cancel).
     """
     MODE_CHOICES = [
-        ('landing_to_bronze', 'Landing to Bronze'),
         ('bronze_to_silver', 'Bronze to Silver'),
         ('silver_to_gold', 'Silver to Gold'),
         ('ALL', 'Full Medallion Cycle'),

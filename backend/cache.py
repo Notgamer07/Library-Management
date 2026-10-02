@@ -11,24 +11,48 @@ class CacheManager:
         self.client: Optional[redis.Redis] = None
 
     async def connect(self):
-        """Initialize Redis connection client."""
-        try:
-            self.client = redis.Redis(
-                host=settings.REDIS_HOST,
-                port=settings.REDIS_PORT,
-                password=settings.REDIS_PASSWORD or None,
-                decode_responses=True
-            )
-            await self.client.ping()
-            logger.info("Redis cache client connected successfully.")
-        except Exception as e:
-            logger.warning(f"Redis cache connection failed: {e}. Fallback to direct DB mode.")
-            self.client = None
+        """Initialize Redis connection client with automatic host fallback."""
+        candidates = [settings.REDIS_HOST]
+        for fallback in ("127.0.0.1", "localhost"):
+            if fallback not in candidates:
+                candidates.append(fallback)
+
+        for host in candidates:
+            try:
+                client = redis.Redis(
+                    host=host,
+                    port=settings.REDIS_PORT,
+                    password=settings.REDIS_PASSWORD or None,
+                    decode_responses=True,
+                    socket_connect_timeout=1.0
+                )
+                await client.ping()
+                self.client = client
+                logger.info(f"Redis cache client connected successfully to {host}:{settings.REDIS_PORT}.")
+                return
+            except Exception as e:
+                logger.debug(f"Redis connection attempt to {host} failed: {e}")
+
+        logger.warning("Redis cache connection failed on all candidate hosts. Fallback to direct DB mode.")
+        self.client = None
 
     async def disconnect(self):
         """Close Redis client connection."""
         if self.client:
-            await self.client.close()
+            if hasattr(self.client, "aclose"):
+                await self.client.aclose()
+            else:
+                await self.client.close()
+
+    async def get_raw(self, key: str) -> Optional[str]:
+        """Fetch cached item as raw JSON string without deserialization overhead."""
+        if not self.client:
+            return None
+        try:
+            return await self.client.get(key)
+        except Exception as e:
+            logger.warning(f"Redis GET error on key '{key}': {e}")
+            return None
 
     async def get(self, key: str) -> Optional[Any]:
         """Fetch cached item by key."""

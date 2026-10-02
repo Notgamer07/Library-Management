@@ -1,0 +1,57 @@
+﻿flowchart TD
+    %% System Overview: High-Level Architecture & Typical Request Movement
+    
+    subgraph Clients ["Clients / Consumers (No Auth Implemented)"]
+        Browser["Web Browser (User / Admin)"]
+        APIClient["API Clients / Load Test Scripts"]
+    end
+
+    subgraph AppLayer ["Application Layer"]
+        Django["Django Web Application<br/>(Port 8080 / Gunicorn-Dev)<br/>• Catalog & Loan UI<br/>• Admin Monitoring Dashboard<br/>• Pipeline Control Manager"]
+        FastAPI["FastAPI Async Backend<br/>(Port 8000 / Uvicorn)<br/>• Fast Raw Write Ingestion<br/>• Cached Catalog & Loan Reads<br/>• Gold Analytics API"]
+    end
+
+    subgraph Caching ["In-Memory Caching"]
+        Redis[("Redis Cache<br/>(Port 6379)<br/>• Catalog Page Cache<br/>• Overdue Loans Cache")]
+    end
+
+    subgraph Pipeline ["Decoupled Medallion Data Pipeline"]
+        LandingDB[("1. Landing Site DB<br/>(Port 5433 - PostgreSQL)<br/>• landing_books_ingest<br/>• landing_borrow_ingest")]
+        Worker[["Data Pipeline Worker<br/>(Independent Python ETL Daemon)<br/>• Stage 1: Landing -> Bronze<br/>• Stage 2: Bronze -> Silver<br/>• Stage 3: Silver -> Gold"]]
+        BronzeDB[("2. Bronze DB<br/>(Port 5434 - PostgreSQL)<br/>• bronze_books<br/>• bronze_borrow_records<br/>• bronze_ingestion_errors")]
+        SilverDB[("3. Silver & Gold DB<br/>(Port 5432 - PostgreSQL)<br/>• Silver: 3NF Books & Loans<br/>• Gold: Daily KPI Summary & Views")]
+    end
+
+    %% Client to App Connections
+    Browser -->|"HTTP GET / POST (UI Forms, AJAX)"| Django
+    APIClient -->|"REST HTTP Requests"| FastAPI
+
+    %% Application to Databases & Cache
+    FastAPI -->|"Fast Ingestion Writes"| LandingDB
+    FastAPI <-->|"Cache Check & Prefetch"| Redis
+    FastAPI -->|"Reads Catalog & Overdue"| SilverDB
+
+    Django -->|"Catalog Form Writes"| LandingDB
+    Django -->|"Direct Stored Proc / Reads"| SilverDB
+    Django -->|"Subprocess Control & Status Poll"| Worker
+    Django -.->|"Live Row Count Metrics"| LandingDB
+    Django -.->|"Live Row Count Metrics"| BronzeDB
+
+    %% Pipeline Data Flow
+    LandingDB -->|"Extract Raw JSONB"| Worker
+    Worker -->|"Load Sanitized / Log Errors"| BronzeDB
+    BronzeDB -->|"Extract Valid Records"| Worker
+    Worker -->|"Transform & Upsert 3NF"| SilverDB
+    Worker -->|"Refresh Daily KPIs (sp_refresh_gold_analytics)"| SilverDB
+
+    classDef client fill:#e0f2fe,stroke:#0284c7,stroke-width:2px;
+    classDef app fill:#f0fdf4,stroke:#16a34a,stroke-width:2px;
+    classDef cache fill:#fef2f2,stroke:#dc2626,stroke-width:2px;
+    classDef db fill:#fef3c7,stroke:#d97706,stroke-width:2px;
+    classDef worker fill:#f3e8ff,stroke:#9333ea,stroke-width:2px;
+
+    class Browser,APIClient client;
+    class Django,FastAPI app;
+    class Redis cache;
+    class LandingDB,BronzeDB,SilverDB db;
+    class Worker worker;

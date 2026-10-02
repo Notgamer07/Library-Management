@@ -12,12 +12,23 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = BASE_DIR.parent
 
-# Automatically load .env file if present
+# Ensure both web/ and project root are on sys.path
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+# Automatically load .env file if present (check BASE_DIR and ROOT_DIR)
 env_file = BASE_DIR / '.env'
+if not env_file.exists():
+    env_file = ROOT_DIR / '.env'
+
 if env_file.exists():
     with open(env_file, 'r', encoding='utf-8') as f:
         for line in f:
@@ -65,7 +76,10 @@ import os
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [os.path.join(BASE_DIR, 'template')],
+        'DIRS': [
+            os.path.join(BASE_DIR, 'template'),
+            os.path.join(ROOT_DIR, 'template'),
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -87,14 +101,59 @@ WSGI_APPLICATION = 'library_management.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('POSTGRES_DB', 'library_db'),
-        'USER': os.getenv('POSTGRES_USER', 'postgres'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
-        'HOST': os.getenv('POSTGRES_HOST', '127.0.0.1'),
-        'PORT': os.getenv('POSTGRES_PORT', '5432'),
+        'NAME': os.getenv('SILVER_DB_NAME', os.getenv('POSTGRES_DB')),
+        'USER': os.getenv('SILVER_DB_USER', os.getenv('POSTGRES_USER')),
+        'PASSWORD': os.getenv('SILVER_DB_PASSWORD', os.getenv('POSTGRES_PASSWORD', '')),
+        'HOST': os.getenv('SILVER_DB_HOST', os.getenv('POSTGRES_HOST')),
+        'PORT': os.getenv('SILVER_DB_PORT', os.getenv('POSTGRES_PORT')),
+    },
+    'bronze': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('BRONZE_DB_NAME'),
+        'USER': os.getenv('BRONZE_DB_USER'),
+        'PASSWORD': os.getenv('BRONZE_DB_PASSWORD'),
+        'HOST': os.getenv('BRONZE_DB_HOST'),
+        'PORT': os.getenv('BRONZE_DB_PORT'),
+    },
+    'gold': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('GOLD_DB_NAME'),
+        'USER': os.getenv('GOLD_DB_USER'),
+        'PASSWORD': os.getenv('GOLD_DB_PASSWORD'),
+        'HOST': os.getenv('GOLD_DB_HOST'),
+        'PORT': os.getenv('GOLD_DB_PORT'),
+    },
+    # Backward compatibility alias
+    'landing': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('BRONZE_DB_NAME'),
+        'USER': os.getenv('BRONZE_DB_USER'),
+        'PASSWORD': os.getenv('BRONZE_DB_PASSWORD' ),
+        'HOST': os.getenv('BRONZE_DB_HOST'),
+        'PORT': os.getenv('BRONZE_DB_PORT'),
     }
 }
 
+# Use in-memory SQLite database during unit test execution
+if 'test' in sys.argv:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': ':memory:',
+        },
+        'bronze': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': ':memory:',
+        },
+        'gold': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': ':memory:',
+        },
+        'landing': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': ':memory:',
+        }
+    }
 
 
 # Password validation

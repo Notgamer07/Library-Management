@@ -73,7 +73,7 @@
 
 ---
 
-## 4. Medallion ETL Data Pipeline Workflow (`pipelines/etl_medallion.py`)
+## 4. Medallion ETL Data Pipeline Workflow (`pipeline/etl_medallion.py`)
 
 ```
    Raw API / Web Payload

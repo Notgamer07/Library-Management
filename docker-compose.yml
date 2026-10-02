@@ -1,32 +1,74 @@
-version: '3.8'
-
 services:
-  # --------------------------------------------------------------------------
-  # 1. Primary PostgreSQL 16 Database Service
-  # --------------------------------------------------------------------------
-  db_postgres:
+  # 1. Bronze Database Instance (Raw Ingestion Layer & Dead Letter Queue)
+  db_bronze:
     image: postgres:16-alpine
-    container_name: library_db_postgres
+    container_name: library_db_bronze
     restart: always
-    env_file: .env
+    command: "postgres -c max_connections=300 -c shared_buffers=256MB -c synchronous_commit=off"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${BRONZE_DB_NAME}
+      POSTGRES_USER: ${BRONZE_DB_USER}
+      POSTGRES_PASSWORD: ${BRONZE_DB_PASSWORD}
     ports:
-      - "5432:5432"
+      - "${BRONZE_DB_HOST_PORT:-5433}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./database/schema_postgres.sql:/docker-entrypoint-initdb.d/01_schema.sql
-      - ./database/init_users.sql:/docker-entrypoint-initdb.d/02_users.sql
+      - bronze_postgres_data:/var/lib/postgresql/data
+      - ./database/schema_bronze.sql:/docker-entrypoint-initdb.d/01_bronze.sql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${BRONZE_DB_USER} -d ${BRONZE_DB_NAME}" ]
       interval: 5s
       timeout: 5s
       retries: 5
 
   # --------------------------------------------------------------------------
-  # 2. Redis In-Memory Cache Service
+  # 2. Silver Database Instance (3NF Clean Relational OLTP Core)
+  # --------------------------------------------------------------------------
+  db_silver:
+    image: postgres:16-alpine
+    container_name: library_db_silver
+    restart: always
+    command: "postgres -c max_connections=300 -c shared_buffers=256MB"
+    environment:
+      POSTGRES_DB: ${SILVER_DB_NAME}
+      POSTGRES_USER: ${SILVER_DB_USER}
+      POSTGRES_PASSWORD: ${SILVER_DB_PASSWORD}
+    ports:
+      - "${SILVER_DB_HOST_PORT}:5432"
+    volumes:
+      - silver_postgres_data:/var/lib/postgresql/data
+      - ./database/schema_silver.sql:/docker-entrypoint-initdb.d/01_silver.sql
+      - ./database/init_users.sql:/docker-entrypoint-initdb.d/02_users.sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${SILVER_DB_USER} -d ${SILVER_DB_NAME}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # 3. Gold Database Instance (Dedicated Day-Wise & Month-Wise Analytics)
+  # --------------------------------------------------------------------------
+  db_gold:
+    image: postgres:16-alpine
+    container_name: library_db_gold
+    restart: always
+    command: "postgres -c max_connections=200 -c shared_buffers=128MB"
+    environment:
+      POSTGRES_DB: ${GOLD_DB_NAME}
+      POSTGRES_USER: ${GOLD_DB_USER}
+      POSTGRES_PASSWORD: ${GOLD_DB_PASSWORD}
+    ports:
+      - "${GOLD_DB_HOST_PORT}:5432"
+    volumes:
+      - gold_postgres_data:/var/lib/postgresql/data
+      - ./database/schema_gold.sql:/docker-entrypoint-initdb.d/01_gold.sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${GOLD_DB_USER} -d ${GOLD_DB_NAME}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # 4. Redis In-Memory Cache Service
   # --------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
@@ -43,7 +85,7 @@ services:
       retries: 5
 
   # --------------------------------------------------------------------------
-  # 3. High-Performance Decoupled Async API Backend (FastAPI + Uvicorn)
+  # 5. FastAPI Async Backend (Writes -> Bronze DB, Reads -> Silver/Gold DB)
   # --------------------------------------------------------------------------
   api:
     build:
@@ -51,28 +93,45 @@ services:
       dockerfile: Dockerfile.api
     container_name: library_api_backend
     restart: always
+    command: sh -c "uvicorn backend.main:app --host 0.0.0.0 --port 8000 $${UVICORN_EXTRA_ARGS:---reload}"
     ports:
       - "8000:8000"
-    env_file: .env
     environment:
-      POSTGRES_HOST: db_postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      BRONZE_DB_HOST: ${BRONZE_DB_HOST}
+      BRONZE_DB_PORT: ${BRONZE_DB_PORT}
+      BRONZE_DB_USER: ${BRONZE_DB_USER:-postgres}
+      BRONZE_DB_PASSWORD: ${BRONZE_DB_PASSWORD}
+      BRONZE_DB_NAME: ${BRONZE_DB_NAME:-bronze_db}
+      SILVER_DB_HOST: ${SILVER_DB_HOST}
+      SILVER_DB_PORT: ${SILVER_DB_PORT}
+      SILVER_DB_USER: ${SILVER_DB_USER}
+      SILVER_DB_PASSWORD: ${SILVER_DB_PASSWORD}
+      SILVER_DB_NAME: ${SILVER_DB_NAME}
+      GOLD_DB_HOST: ${GOLD_DB_HOST}
+      GOLD_DB_PORT: ${GOLD_DB_PORT}
+      GOLD_DB_USER: ${GOLD_DB_USER}
+      GOLD_DB_PASSWORD: ${GOLD_DB_PASSWORD}
+      GOLD_DB_NAME: ${GOLD_DB_NAME}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      DB_POOL_MIN_SIZE: ${DB_POOL_MIN_SIZE:-20}
-      DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-100}
-
+      DB_POOL_MIN_SIZE: ${DB_POOL_MIN_SIZE:-5}
+      DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-40}
+      UVICORN_EXTRA_ARGS: ${UVICORN_EXTRA_ARGS:---workers 4 --no-access-log}
+    volumes:
+      - .:/app
+      - /app/__pycache__
     depends_on:
-      db_postgres:
+      db_bronze:
+        condition: service_healthy
+      db_silver:
+        condition: service_healthy
+      db_gold:
         condition: service_healthy
       redis:
         condition: service_healthy
 
   # --------------------------------------------------------------------------
-  # 4. Medallion ETL Pipeline Worker (Scheduled Execution Every 1-2 Mins)
+  # 6. Medallion ETL Pipeline Worker (Bronze -> Silver -> Gold)
   # --------------------------------------------------------------------------
   pipeline_worker:
     build:
@@ -80,20 +139,37 @@ services:
       dockerfile: Dockerfile.api
     container_name: library_pipeline_worker
     restart: always
-    command: python pipelines/etl_medallion.py --interval-seconds 90
-    env_file: .env
+    command: python pipeline/etl_medallion.py --interval-seconds 90
     environment:
-      POSTGRES_HOST: db_postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      BRONZE_DB_HOST: ${BRONZE_DB_HOST}
+      BRONZE_DB_PORT: ${BRONZE_DB_PORT}
+      BRONZE_DB_USER: ${BRONZE_DB_USER}
+      BRONZE_DB_PASSWORD: ${BRONZE_DB_PASSWORD}
+      BRONZE_DB_NAME: ${BRONZE_DB_NAME}
+      SILVER_DB_HOST: ${SILVER_DB_HOST} 
+      SILVER_DB_PORT: ${SILVER_DB_PORT} 
+      SILVER_DB_USER: ${SILVER_DB_USER}
+      SILVER_DB_PASSWORD: ${SILVER_DB_PASSWORD}
+      SILVER_DB_NAME: ${SILVER_DB_NAME}
+      GOLD_DB_HOST: ${GOLD_DB_HOST}
+      GOLD_DB_PORT: ${GOLD_DB_PORT}
+      GOLD_DB_USER: ${GOLD_DB_USER}
+      GOLD_DB_PASSWORD: ${GOLD_DB_PASSWORD}
+      GOLD_DB_NAME: ${GOLD_DB_NAME}
+      PIPELINE_BATCH_SIZE: ${PIPELINE_BATCH_SIZE:-10000}
+    volumes:
+      - .:/app
+      - /app/__pycache__
     depends_on:
-      db_postgres:
+      db_bronze:
+        condition: service_healthy
+      db_silver:
+        condition: service_healthy
+      db_gold:
         condition: service_healthy
 
   # --------------------------------------------------------------------------
-  # 5. Django Web UI Service
+  # 7. Django Web UI Service
   # --------------------------------------------------------------------------
   django_web:
     build:
@@ -103,19 +179,43 @@ services:
     restart: always
     ports:
       - "8080:8080"
-    env_file: .env
     environment:
-      POSTGRES_HOST: db_postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      BRONZE_DB_HOST: ${BRONZE_DB_HOST}
+      BRONZE_DB_PORT: ${BRONZE_DB_PORT}
+      BRONZE_DB_USER: ${BRONZE_DB_USER}
+      BRONZE_DB_PASSWORD: ${BRONZE_DB_PASSWORD}
+      BRONZE_DB_NAME: ${BRONZE_DB_NAME}
+      SILVER_DB_HOST: ${SILVER_DB_HOST} 
+      SILVER_DB_PORT: ${SILVER_DB_PORT}
+      SILVER_DB_USER: ${SILVER_DB_USER}
+      SILVER_DB_PASSWORD: ${SILVER_DB_PASSWORD}
+      SILVER_DB_NAME: ${SILVER_DB_NAME}
+      GOLD_DB_HOST: ${GOLD_DB_HOST} 
+      GOLD_DB_PORT: ${GOLD_DB_PORT} 
+      GOLD_DB_USER: ${GOLD_DB_USER}
+      GOLD_DB_PASSWORD: ${GOLD_DB_PASSWORD}
+      GOLD_DB_NAME: ${GOLD_DB_NAME}
       SECRET_KEY: ${SECRET_KEY}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+      API_HOST: api
+    volumes:
+      - .:/app
+      - /app/__pycache__
     depends_on:
-      db_postgres:
+      db_silver:
         condition: service_healthy
+      db_bronze:
+        condition: service_healthy
+      db_gold:
+        condition: service_healthy
+    networks:
+      default:
+        aliases:
+          - django-web
 
 volumes:
-  postgres_data:
+  bronze_postgres_data:
+  silver_postgres_data:
+  gold_postgres_data:
   redis_data:

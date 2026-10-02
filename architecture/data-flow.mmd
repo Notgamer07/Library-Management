@@ -1,0 +1,104 @@
+﻿flowchart TD
+    %% Data Flow: Movement through the Landing -> Bronze -> Silver -> Gold Pipeline
+
+    subgraph IngestionSources ["1. Data Ingestion Sources"]
+        UI_Book["Django UI: Add Book Form<br/>(source_channel: 'DJANGO_UI')"]
+        API_Book["FastAPI: Ingest Book<br/>POST /api/v1/ingest/landing<br/>(source_channel: 'API' / 'LOAD_TEST_V4')"]
+        API_Borrow["FastAPI: Ingest Borrow<br/>POST /api/v1/ingest/borrow<br/>(source_channel: 'API_BORROW_INGEST')"]
+        UI_IssueDirect["Django UI: Direct Issue Book<br/>POST /add_student/"]
+        UI_ReturnDirect["Django UI: Direct Return Book<br/>POST /return-book/"]
+    end
+
+    subgraph LandingLayer ["2. Landing Layer (Staging Database - Port 5433)"]
+        LandingBooks[("landing_books_ingest<br/>• ingest_id (UUID PK)<br/>• raw_payload (JSONB)<br/>• source_channel (VARCHAR)<br/>• received_at (TIMESTAMPTZ)<br/>• processed_flag (BOOLEAN)")]
+        LandingBorrow[("landing_borrow_ingest<br/>• ingest_id (UUID PK)<br/>• raw_payload (JSONB)<br/>• source_channel (VARCHAR)<br/>• received_at (TIMESTAMPTZ)<br/>• processed_flag (BOOLEAN)")]
+    end
+
+    subgraph Stage1ETL ["3. Stage 1 ETL: Landing -> Bronze (Hygiene & Audit)"]
+        Worker1["MedallionPipelineWorker.process_landing_to_bronze()<br/>• Batch extraction (LIMIT 500 WHERE processed_flag = FALSE)<br/>• Hygiene check: non-empty title/name/student_id<br/>• Value validation: price >= 0, total_copies >= 0<br/>• Marks processed_flag = TRUE in Landing DB"]
+    end
+
+    subgraph BronzeLayer ["4. Bronze Layer (Data Lake & Errors - Port 5434)"]
+        BronzeBooks[("bronze_books<br/>• bronze_id (UUID PK)<br/>• ingest_id (UUID FK)<br/>• title, author, category, publisher<br/>• isbn, price, total_copies<br/>• is_valid = TRUE<br/>• promoted_to_silver = FALSE")]
+        BronzeBorrow[("bronze_borrow_records<br/>• bronze_id (UUID PK)<br/>• ingest_id (UUID FK)<br/>• borrower_name, student_id, book_title<br/>• borrow_date, due_date<br/>• is_valid = TRUE<br/>• promoted_to_silver = FALSE")]
+        BronzeErrors[("bronze_ingestion_errors (Dead-Letter Queue)<br/>• error_id (UUID PK)<br/>• source_layer ('LANDING'/'LANDING_BORROW')<br/>• raw_data (JSONB)<br/>• error_message (TEXT)<br/>• logged_at (TIMESTAMPTZ)")]
+    end
+
+    subgraph Stage2ETL ["5. Stage 2 ETL: Bronze -> Silver 3NF (Entity Resolution)"]
+        Worker2["MedallionPipelineWorker.process_bronze_to_silver()<br/>• Batch extraction (LIMIT 500 WHERE is_valid=TRUE AND promoted=FALSE)<br/>• Entity Resolution: authors, categories, publishers<br/>• 3NF Upsert: ON CONFLICT(isbn) DO UPDATE copies<br/>• Loan Ingestion: executes sp_issue_book()<br/>• Marks promoted_to_silver = TRUE in Bronze DB"]
+    end
+
+    subgraph SilverLayer ["6. Silver Layer (Operational 3NF OLTP - Port 5432)"]
+        SilverLookup["Dimension / Entity Tables<br/>• categories (category_id, name)<br/>• authors (author_id, name, email)<br/>• publishers (publisher_id, name, address)"]
+        SilverBooks[("books<br/>• book_id (PK)<br/>• title, isbn (UNIQUE)<br/>• author_id, category_id, publisher_id (FKs)<br/>• price, total_copies, available_copies")]
+        SilverBorrowers[("borrowers<br/>• borrower_id (PK)<br/>• student_id (UNIQUE), name, email")]
+        SilverLoans[("borrow_records<br/>• record_id (PK)<br/>• borrower_id (FK), book_id (FK)<br/>• borrowed_at, due_date, returned_at<br/>• status ('BORROWED'/'RETURNED'/'OVERDUE')<br/>• fine_amount")]
+        SilverFines[("fine_payments<br/>• payment_id (PK), record_id (FK)<br/>• amount, paid_at, payment_method")]
+    end
+
+    subgraph Stage3ETL ["7. Stage 3 ETL: Silver -> Gold Analytics"]
+        Worker3["MedallionPipelineWorker.process_silver_to_gold()<br/>• Executes SQL function sp_refresh_gold_analytics()<br/>• Upserts daily rollup KPIs for CURRENT_DATE"]
+    end
+
+    subgraph GoldLayer ["8. Gold Layer (Analytics Marts & Views - Port 5432)"]
+        GoldKPI[("gold_daily_kpi_summary<br/>• summary_date (DATE PK)<br/>• total_books_in_catalog<br/>• total_copies_available<br/>• total_active_loans<br/>• total_overdue_loans<br/>• total_fines_accrued<br/>• total_fines_collected")]
+        GoldViews["Gold Real-Time Analytical Views<br/>• vw_gold_inventory_status (Stock levels)<br/>• vw_gold_overdue_fines (Calculated daily fines)<br/>• vw_gold_author_popularity (Borrow metrics)"]
+    end
+
+    subgraph Consumers ["9. Consumers & Analytics Dashboards"]
+        AdminUI["Admin Dashboard UI (:8080/admin-dashboard/)<br/>• Live Medallion tier counts<br/>• Latest Gold KPIs summary"]
+        FastAPIAnalytics["FastAPI Analytics (:8000/api/v1/analytics/gold-summary)<br/>• JSON KPI & Author Popularity feeds"]
+        WebCatalog["Catalog & Overdue Views (:8080/books/, :8080/location/)"]
+    end
+
+    %% Ingestion Links
+    UI_Book -->|"Fast append JSONB"| LandingBooks
+    API_Book -->|"Fast append JSONB"| LandingBooks
+    API_Borrow -->|"Fast append JSONB"| LandingBorrow
+    UI_IssueDirect -->|"Bypass Landing: executes sp_issue_book"| SilverLoans
+    UI_ReturnDirect -->|"Bypass Landing: executes sp_return_book"| SilverLoans
+
+    %% Stage 1 Links
+    LandingBooks -->|"Extract unprocessed"| Worker1
+    LandingBorrow -->|"Extract unprocessed"| Worker1
+    Worker1 -->|"Load clean books"| BronzeBooks
+    Worker1 -->|"Load clean loans"| BronzeBorrow
+    Worker1 -->|"Log hygiene failures"| BronzeErrors
+
+    %% Stage 2 Links
+    BronzeBooks -->|"Extract unpromoted"| Worker2
+    BronzeBorrow -->|"Extract unpromoted"| Worker2
+    Worker2 -->|"Resolve Dimensions"| SilverLookup
+    Worker2 -->|"Upsert 3NF Catalog"| SilverBooks
+    Worker2 -->|"Issue loan via sp_issue_book"| SilverLoans
+
+    %% Stage 3 Links
+    SilverBooks -->|"Aggregate counts"| Worker3
+    SilverLoans -->|"Aggregate loan stats"| Worker3
+    SilverFines -->|"Aggregate fine revenue"| Worker3
+    Worker3 -->|"Upsert Daily KPIs"| GoldKPI
+    SilverBooks -.->|"Underlies view"| GoldViews
+    SilverLoans -.->|"Underlies view"| GoldViews
+
+    %% Consumer Links
+    GoldKPI -->|"Query latest KPIs"| AdminUI
+    GoldKPI -->|"Query summary"| FastAPIAnalytics
+    GoldViews -->|"Query active overdue"| WebCatalog
+    GoldViews -->|"Query popularity & stock"| FastAPIAnalytics
+    SilverBooks -->|"Paginated read"| WebCatalog
+
+    classDef source fill:#e0f2fe,stroke:#0284c7,stroke-width:2px;
+    classDef landing fill:#fef3c7,stroke:#d97706,stroke-width:2px;
+    classDef bronze fill:#fed7aa,stroke:#ea580c,stroke-width:2px;
+    classDef silver fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px;
+    classDef gold fill:#fef08a,stroke:#ca8a04,stroke-width:2px;
+    classDef etl fill:#f3e8ff,stroke:#9333ea,stroke-width:2px;
+    classDef consumer fill:#dcfce7,stroke:#16a34a,stroke-width:2px;
+
+    class UI_Book,API_Book,API_Borrow,UI_IssueDirect,UI_ReturnDirect source;
+    class LandingBooks,LandingBorrow landing;
+    class BronzeBooks,BronzeBorrow,BronzeErrors bronze;
+    class SilverLookup,SilverBooks,SilverBorrowers,SilverLoans,SilverFines silver;
+    class GoldKPI,GoldViews gold;
+    class Worker1,Worker2,Worker3 etl;
+    class AdminUI,FastAPIAnalytics,WebCatalog consumer;

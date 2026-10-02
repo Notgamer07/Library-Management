@@ -1,0 +1,49 @@
+﻿sequenceDiagram
+    %% Predictive 3-Page Redis Caching Sequence (FastAPI + Redis + Silver DB)
+    autonumber
+
+    actor Client as API Client / Web Frontend
+    participant API as FastAPI Backend (backend/main.py)
+    participant Redis as Redis Cache (Port 6379)
+    participant Silver as Silver Database (Port 5432)
+
+    Note over Client,Silver: Flow A: Cache HIT on Requested Page
+    Client->>API: GET /api/v1/books?page=2&page_size=10
+    API->>Redis: GET catalog:books:page:2:size:10
+    Redis-->>API: Return Cached Page Payload (JSON)
+    Note over API: Attach headers: X-Cache: HIT, X-Cache-Key
+    API-->>Client: 200 OK (Clean JSON Body + X-Cache: HIT)
+
+    Note over Client,Silver: Flow B: Cache MISS & 3-Page Predictive Prefetch
+    Client->>API: GET /api/v1/books?page=5&page_size=10
+    API->>Redis: GET catalog:books:page:5:size:10
+    Redis-->>API: nil (Cache MISS)
+    
+    API->>Redis: GET catalog:books:count
+    alt Count not in Redis
+        API->>Silver: SELECT COUNT(*) FROM books;
+        Silver-->>API: total_books = 119
+        API->>Redis: SET catalog:books:count 119 (TTL 60s)
+    else Count cached in Redis
+        Redis-->>API: total_books = 119
+    end
+
+    Note over API: Calculate 3-Page Window:<br/>Lag=4, Requested=5, Lead=6<br/>OFFSET=(min_p - 1)*size, LIMIT=3*size
+    API->>Silver: SELECT ... FROM books JOIN authors ... OFFSET 30 LIMIT 30;
+    Silver-->>API: 30 Rows of Book Data
+
+    Note over API: Partition rows into Page 4, Page 5, Page 6 payloads
+    par Async Redis Storage
+        API->>Redis: SET catalog:books:page:4:size:10 (Lag Page, TTL 60s)
+        API->>Redis: SET catalog:books:page:5:size:10 (Requested Page, TTL 60s)
+        API->>Redis: SET catalog:books:page:6:size:10 (Lead Page, TTL 60s)
+    end
+
+    Note over API: Attach headers: X-Cache: MISS, X-Cache-Key
+    API-->>Client: 200 OK (Requested Page 5 Only + X-Cache: MISS)
+
+    Note over Client,Silver: Flow C: Subsequent User Next/Prev Navigation is Instant HIT
+    Client->>API: GET /api/v1/books?page=6&page_size=10 (User clicks 'Next')
+    API->>Redis: GET catalog:books:page:6:size:10
+    Redis-->>API: Return Prefetched Page 6 Payload
+    API-->>Client: 200 OK (Instant Cache HIT without Silver DB query!)

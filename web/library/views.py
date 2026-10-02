@@ -1,15 +1,16 @@
 import json
-import requests
+import os
 import psutil
 from django.shortcuts import render, redirect
-from django.db import connection
+from django.db import connection, connections
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from backend.config import settings
 from .pipeline_manager import pipeline_mgr, STAGE_DISPLAY_NAMES
 
-FASTAPI_BASE_URL = f"http://localhost:8000{settings.API_V1_STR}"
+FASTAPI_HOST = os.getenv("API_HOST", "api" if os.path.exists("/.dockerenv") else "localhost")
+FASTAPI_BASE_URL = f"http://{FASTAPI_HOST}:8000{settings.API_V1_STR}"
 
 def get_medallion_metrics():
     """Helper to collect live distinct row counts across all Medallion tiers."""
@@ -45,43 +46,45 @@ def get_medallion_metrics():
         "gold_kpi": {}
     }
 
+    # 1. Bronze Layer rows (Queried from Bronze Database - Raw Ingestion Layer)
     try:
-        with connection.cursor() as cursor:
-            # 1. Landing Site rows
-            cursor.execute("SELECT COUNT(*) FROM landing_books_ingest;")
+        bronze_conn = connections['bronze'] if 'bronze' in connections else connection
+        with bronze_conn.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM bronze_books_ingest;")
             lb_total = cursor.fetchone()[0]
             metrics["landing_books_total"] = lb_total
+            metrics["bronze_books"] = lb_total
 
-            cursor.execute("SELECT COUNT(*) FROM landing_borrow_ingest;")
+            cursor.execute("SELECT COUNT(*) FROM bronze_borrow_ingest;")
             lbr_total = cursor.fetchone()[0]
             metrics["landing_borrow_total"] = lbr_total
+            metrics["bronze_borrow_records"] = lbr_total
 
-            metrics["landing_rows"] = lb_total + lbr_total
-            metrics["landing_total"] = lb_total + lbr_total
-
-            cursor.execute("""
-                SELECT 
-                    (SELECT COUNT(*) FROM landing_books_ingest WHERE processed_flag = FALSE) +
-                    (SELECT COUNT(*) FROM landing_borrow_ingest WHERE processed_flag = FALSE);
-            """)
-            metrics["landing_unprocessed"] = cursor.fetchone()[0]
-
-            # 2. Bronze Layer rows
-            cursor.execute("SELECT COUNT(*) FROM bronze_books;")
-            bb_count = cursor.fetchone()[0]
-            metrics["bronze_books"] = bb_count
-
-            cursor.execute("SELECT COUNT(*) FROM bronze_borrow_records;")
-            bbr_count = cursor.fetchone()[0]
-            metrics["bronze_borrow_records"] = bbr_count
+            cursor.execute("SELECT COUNT(*) FROM bronze_book_views_ingest;")
+            bv_total = cursor.fetchone()[0]
 
             cursor.execute("SELECT COUNT(*) FROM bronze_ingestion_errors;")
             be_count = cursor.fetchone()[0]
             metrics["bronze_errors"] = be_count
 
-            metrics["bronze_rows"] = bb_count + bbr_count + be_count
+            metrics["landing_rows"] = lb_total + lbr_total + bv_total
+            metrics["landing_total"] = lb_total + lbr_total + bv_total
+            metrics["bronze_rows"] = lb_total + lbr_total + bv_total + be_count
 
-            # 3. Silver Layer rows (Operational 3NF)
+            cursor.execute("""
+                SELECT 
+                    (SELECT COUNT(*) FROM bronze_books_ingest WHERE processed_flag = FALSE) +
+                    (SELECT COUNT(*) FROM bronze_borrow_ingest WHERE processed_flag = FALSE) +
+                    (SELECT COUNT(*) FROM bronze_book_views_ingest WHERE processed_flag = FALSE);
+            """)
+            metrics["landing_unprocessed"] = cursor.fetchone()[0]
+    except Exception:
+        pass
+
+    # 2. Silver Layer rows (Queried from Silver Database)
+    try:
+        silver_conn = connections['default']
+        with silver_conn.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM books;")
             s_books = cursor.fetchone()[0]
             metrics["silver_books"] = s_books
@@ -118,12 +121,17 @@ def get_medallion_metrics():
 
             cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE status = 'OVERDUE';")
             metrics["silver_overdue_loans"] = cursor.fetchone()[0]
+    except Exception:
+        pass
 
-            # 4. Gold Layer KPI summary
+    # 3. Gold Layer KPIs (Queried from Dedicated Gold Database)
+    try:
+        gold_conn = connections['gold'] if 'gold' in connections else connection
+        with gold_conn.cursor() as cursor:
             cursor.execute("""
-                SELECT summary_date, total_books_in_catalog, total_copies_available, 
-                       total_active_loans, total_overdue_loans, total_fines_accrued, total_fines_collected 
-                FROM gold_daily_kpi_summary 
+                SELECT summary_date, total_loans, total_returns, total_overdue, 
+                       total_fines_accrued, total_fines_collected 
+                FROM gold_loans_returns_daily 
                 ORDER BY summary_date DESC LIMIT 1;
             """)
             row = cursor.fetchone()
@@ -142,15 +150,18 @@ def home(request):
     
     # Fetch list of available books for quick selection
     available_books = []
-    with connection.cursor() as cursor:
-        cursor.execute("""
-            SELECT title, available_copies 
-            FROM books 
-            WHERE available_copies > 0 
-            ORDER BY title ASC LIMIT 50;
-        """)
-        for row in cursor.fetchall():
-            available_books.append({"title": row[0], "available_copies": row[1]})
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT title, available_copies 
+                FROM books 
+                WHERE available_copies > 0 
+                ORDER BY title ASC LIMIT 50;
+            """)
+            for row in cursor.fetchall():
+                available_books.append({"title": row[0], "available_copies": row[1]})
+    except Exception:
+        pass
 
     context = {
         "active_tab": "home",
@@ -232,11 +243,14 @@ def book_list(request):
     query += " ORDER BY b.book_id DESC;"
 
     books = []
-    with connection.cursor() as cursor:
-        cursor.execute(query, params)
-        columns = [col[0] for col in cursor.description]
-        for row in cursor.fetchall():
-            books.append(dict(zip(columns, row)))
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(query, params)
+            columns = [col[0] for col in cursor.description]
+            for row in cursor.fetchall():
+                books.append(dict(zip(columns, row)))
+    except Exception:
+        pass
 
     paginator = Paginator(books, page_size)
     try:
@@ -277,43 +291,21 @@ def add_book(request):
         if not title or not author or not price:  
             return redirect('book_list')
 
-        with connection.cursor() as cursor:
-            # Resolve Author
-            cursor.execute("SELECT author_id FROM authors WHERE LOWER(name) = LOWER(%s);", [author])
-            row = cursor.fetchone()
-            if not row:
-                cursor.execute("INSERT INTO authors (name) VALUES (%s) RETURNING author_id;", [author])
-                author_id = cursor.fetchone()[0]
-            else:
-                author_id = row[0]
-
-            # Resolve Category
-            cursor.execute("SELECT category_id FROM categories WHERE LOWER(name) = LOWER(%s);", [category])
-            cat_row = cursor.fetchone()
-            if not cat_row:
-                cursor.execute("INSERT INTO categories (name) VALUES (%s) RETURNING category_id;", [category])
-                cat_id = cursor.fetchone()[0]
-            else:
-                cat_id = cat_row[0]
-
-            # Resolve Publisher
-            cursor.execute("SELECT publisher_id FROM publishers WHERE LOWER(name) = LOWER(%s);", [publisher])
-            pub_row = cursor.fetchone()
-            if not pub_row:
-                cursor.execute("INSERT INTO publishers (name) VALUES (%s) RETURNING publisher_id;", [publisher])
-                pub_id = cursor.fetchone()[0]
-            else:
-                pub_id = pub_row[0]
-
-            # Upsert book
-            cursor.execute("""
-                INSERT INTO books (title, author_id, category_id, publisher_id, price, total_copies, available_copies, isbn)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (isbn) DO UPDATE SET 
-                    total_copies = books.total_copies + EXCLUDED.total_copies,
-                    available_copies = books.available_copies + EXCLUDED.total_copies,
-                    price = EXCLUDED.price;
-            """, [title, author_id, cat_id, pub_id, price, total_copies, total_copies, isbn])
+        bronze_conn = connections['bronze'] if 'bronze' in connections else connection
+        with bronze_conn.cursor() as cursor:
+            payload = {
+                "title": title,
+                "author": author,
+                "category": category,
+                "publisher": publisher,
+                "price": float(price),
+                "total_copies": total_copies,
+                "isbn": isbn
+            }
+            cursor.execute(
+                "INSERT INTO bronze_books_ingest (raw_payload, source_channel) VALUES (%s::jsonb, %s);",
+                [json.dumps(payload), 'DJANGO_UI']
+            )
 
     return redirect('book_list')
 

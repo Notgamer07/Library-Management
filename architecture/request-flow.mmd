@@ -1,0 +1,116 @@
+﻿flowchart TD
+    %% Request Flow: Processing paths for major operations
+
+    subgraph Clients ["Clients (No Auth Required)"]
+        UserBrowser["Web Browser (User / Admin)"]
+        HTTPClient["API Client / Benchmark Worker"]
+    end
+
+    subgraph Entrypoints ["Routing & View Controllers"]
+        subgraph DjangoControllers ["Django Web Server (:8080)"]
+            V_BookList["library.views.book_list<br/>GET /books/"]
+            V_AddBook["library.views.add_book<br/>POST /books/add/"]
+            V_IssueLoan["library.views.add_student<br/>POST /add_student/"]
+            V_DueBooks["DueBooks.views.show<br/>GET /location/"]
+            V_ReturnLoan["DueBooks.views.mark_as_returned<br/>POST /return-book/"]
+            V_AdminDash["library.views.admin_dashboard<br/>GET /admin-dashboard/"]
+            V_PipeControl["library.views.api_pipeline_start<br/>POST /api/pipeline/start/"]
+        end
+
+        subgraph FastAPIControllers ["FastAPI Async Server (:8000)"]
+            API_ListBooks["GET /api/v1/books<br/>(Paginated Catalog)"]
+            API_AddBook["POST /api/v1/ingest/landing<br/>or POST /api/v1/books"]
+            API_IssueLoan["POST /api/v1/ingest/borrow<br/>or POST /api/v1/loans/issue"]
+            API_ReturnLoan["POST /api/v1/loans/return"]
+            API_Overdue["GET /api/v1/loans/overdue"]
+            API_Analytics["GET /api/v1/analytics/gold-summary"]
+        end
+    end
+
+    subgraph LogicLayer ["Business Logic & Coordination"]
+        Paginator["Django Paginator<br/>(In-Memory Slice)"]
+        PydanticValidation["Pydantic Validation<br/>(BookCreate, BorrowIngest)"]
+        CachePredictor["3-Page Predictive Cache Logic<br/>(Lag, Req, Lead Pages)"]
+        PipelineMgr["PipelineManager Singleton<br/>(Subprocess Lifecycle & Thread Monitor)"]
+    end
+
+    subgraph DataStorage ["Data Layer"]
+        RedisCache[("Redis Cache (:6379)<br/>catalog:books:*<br/>loans:overdue:*")]
+        LandingDB[("Landing DB (:5433)<br/>landing_books_ingest<br/>landing_borrow_ingest")]
+        SilverDB[("Silver & Gold DB (:5432)<br/>books, borrowers, borrow_records<br/>Stored Procedures: sp_issue_book, sp_return_book<br/>Views: vw_gold_overdue_fines, gold_daily_kpi_summary")]
+    end
+
+    %% Flow 1: Catalog Browse (Django vs FastAPI)
+    UserBrowser -->|"GET /books/?q=...&page=..."| V_BookList
+    V_BookList -->|"Raw SQL SELECT with ILIKE"| SilverDB
+    SilverDB -->|"ResultSet"| Paginator
+    Paginator -->|"render(books.html)"| UserBrowser
+
+    HTTPClient -->|"GET /api/v1/books?page=...&page_size=..."| API_ListBooks
+    API_ListBooks --> CachePredictor
+    CachePredictor <-->|"1. Check Key"| RedisCache
+    CachePredictor -->|"2. On Miss: SQL Window Query (OFFSET/LIMIT)"| SilverDB
+    CachePredictor -->|"3. Preload Lag, Req, Lead"| RedisCache
+    API_ListBooks -->|"JSON + X-Cache Header"| HTTPClient
+
+    %% Flow 2: Book Ingestion (Django vs FastAPI)
+    UserBrowser -->|"POST /books/add/"| V_AddBook
+    V_AddBook -->|"JSON payload + INSERT (DJANGO_UI)"| LandingDB
+    V_AddBook -->|"302 Redirect (/books/)"| UserBrowser
+
+    HTTPClient -->|"POST /api/v1/ingest/landing"| API_AddBook
+    API_AddBook --> PydanticValidation
+    PydanticValidation -->|"INSERT ... RETURNING ingest_id"| LandingDB
+    API_AddBook -.->|"Invalidate catalog cache"| RedisCache
+    API_AddBook -->|"200 Queued + ingest_id"| HTTPClient
+
+    %% Flow 3: Loan Issue (Django Direct Stored Proc vs FastAPI Ingestion)
+    UserBrowser -->|"POST /add_student/"| V_IssueLoan
+    V_IssueLoan -->|"SELECT sp_issue_book(roll_no, name, title, 7)"| SilverDB
+    V_IssueLoan -->|"302 Redirect (/)"| UserBrowser
+
+    HTTPClient -->|"POST /api/v1/ingest/borrow"| API_IssueLoan
+    API_IssueLoan --> PydanticValidation
+    PydanticValidation -->|"INSERT into landing_borrow_ingest"| LandingDB
+    API_IssueLoan -.->|"Invalidate cache"| RedisCache
+    API_IssueLoan -->|"200 Queued + ingest_id"| HTTPClient
+
+    %% Flow 4: Loan Return (Django Direct Stored Proc vs FastAPI Ingestion)
+    UserBrowser -->|"POST /return-book/ (AJAX)"| V_ReturnLoan
+    V_ReturnLoan -->|"SELECT sp_return_book(record_id)"| SilverDB
+    V_ReturnLoan -->|"JSON (returned_date, fine_amount)"| UserBrowser
+
+    HTTPClient -->|"POST /api/v1/loans/return"| API_ReturnLoan
+    API_ReturnLoan -->|"Stage RETURN payload"| LandingDB
+    API_ReturnLoan -->|"200 Queued"| HTTPClient
+
+    %% Flow 5: Overdue / Due Books
+    UserBrowser -->|"GET /location/"| V_DueBooks
+    V_DueBooks -->|"SELECT borrow_records JOIN books"| SilverDB
+    V_DueBooks -->|"render(location.html)"| UserBrowser
+
+    HTTPClient -->|"GET /api/v1/loans/overdue"| API_Overdue
+    API_Overdue <-->|"Check / Store Cache (TTL 30s)"| RedisCache
+    API_Overdue -->|"On Miss: SELECT vw_gold_overdue_fines"| SilverDB
+    API_Overdue -->|"JSON Overdue Data"| HTTPClient
+
+    %% Flow 6: Admin Dashboard & Pipeline Control
+    UserBrowser -->|"GET /admin-dashboard/"| V_AdminDash
+    V_AdminDash -->|"Live Counts (Landing, Bronze, Silver, Gold)"| LandingDB
+    V_AdminDash -->|"Live Counts"| SilverDB
+    V_AdminDash -->|"render(admin_dashboard.html)"| UserBrowser
+
+    UserBrowser -->|"POST /api/pipeline/start/"| V_PipeControl
+    V_PipeControl --> PipelineMgr
+    PipelineMgr -->|"Spawn Subprocess (etl_medallion.py)"| PipelineMgr
+    V_PipeControl -->|"202 Accepted JSON"| UserBrowser
+
+    classDef client fill:#e0f2fe,stroke:#0284c7,stroke-width:2px;
+    classDef controller fill:#f0fdf4,stroke:#16a34a,stroke-width:2px;
+    classDef logic fill:#fef3c7,stroke:#d97706,stroke-width:2px;
+    classDef storage fill:#ede9fe,stroke:#7c3aed,stroke-width:2px;
+
+    class UserBrowser,HTTPClient client;
+    class V_BookList,V_AddBook,V_IssueLoan,V_DueBooks,V_ReturnLoan,V_AdminDash,V_PipeControl,API_ListBooks,API_AddBook,API_IssueLoan,API_ReturnLoan,API_Overdue,API_Analytics controller;
+    class Paginator,PydanticValidation,CachePredictor,PipelineMgr logic;
+    class RedisCache,LandingDB,SilverDB storage;

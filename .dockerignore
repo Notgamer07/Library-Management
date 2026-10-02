@@ -1,0 +1,43 @@
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Git & VCS
+.git/
+.gitignore
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# IDE & Editor configs
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation & large test data / logs
+*.log
+architecture/
+description/
+scratch/
+API_DOCUMENTATION.md
+test_config_setup.md
+testConnection.py
